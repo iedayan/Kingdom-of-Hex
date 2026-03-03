@@ -4,7 +4,6 @@ import {
   Color,
   EquirectangularReflectionMapping,
   DirectionalLight,
-  HemisphereLight,
   DirectionalLightHelper,
 } from 'three/webgpu'
 import { HDRLoader } from 'three/examples/jsm/Addons.js'
@@ -18,7 +17,6 @@ export class Lighting {
     this.dirLight = null
     this.dirLightOffset = null
     this.dirLightHelper = null
-    this.hemiLight = null
     this.sceneBounds = null
   }
 
@@ -57,9 +55,6 @@ export class Lighting {
     this.dirLightHelper = new DirectionalLightHelper(this.dirLight, 10)
     scene.add(this.dirLightHelper)
 
-    // Hemisphere light for soft sky/ground fill (values set by applyParams)
-    this.hemiLight = new HemisphereLight(0xffffff, 0x444444, 1)
-    scene.add(this.hemiLight)
   }
 
   // Compute shadow camera frustum to cover scene from any light angle

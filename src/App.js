@@ -6,7 +6,6 @@ import {
   Vector2,
   Vector3,
   Scene,
-  NoToneMapping,
   Plane,
   WebGPURenderer,
   PCFShadowMap,
@@ -92,8 +91,6 @@ export class App {
     // DPR 2 with half-res AO gives good quality/perf balance
     this.renderer.setPixelRatio(2)
     this.renderer.setSize(window.innerWidth, window.innerHeight)
-    this.renderer.toneMapping = NoToneMapping
-    this.renderer.toneMappingExposure = 1.0
     this.renderer.shadowMap.enabled = true
     this.renderer.shadowMap.type = PCFShadowMap
 
@@ -354,7 +351,7 @@ export class App {
     // Zoom/rotation limits - defaults allow unlimited (debugCam: true)
     this.controls.minDistance = 25
     this.controls.maxDistance = 410
-    this.controls.maxPolarAngle = 1.1
+    this.controls.maxPolarAngle = 1.424
     // Pan parallel to ground plane instead of screen
     this.controls.screenSpacePanning = false
     this.controls.target.set(0.903, 1, 1.168)
@@ -385,13 +382,13 @@ export class App {
     this.aoEnabled = this.postFX.aoEnabled
     this.vignetteEnabled = this.postFX.vignetteEnabled
     this.debugView = this.postFX.debugView
-    this.aoBlurAmount = this.postFX.aoBlurAmount
+    this.aoDenoiseRadius = this.postFX.aoDenoiseRadius
     this.aoIntensity = this.postFX.aoIntensity
     this.aoPass = this.postFX.aoPass
     this.dofEnabled = this.postFX.dofEnabled
     this.dofFocus = this.postFX.dofFocus
-    this.dofAperture = this.postFX.dofAperture
-    this.dofMaxblur = this.postFX.dofMaxblur
+    this.dofFocalLength = this.postFX.dofFocalLength
+    this.dofBokehScale = this.postFX.dofBokehScale
     this.grainEnabled = this.postFX.grainEnabled
     this.grainStrength = this.postFX.grainStrength
   }
@@ -615,13 +612,11 @@ export class App {
     if (controls.target.y < 0) controls.target.y = 0
     this.lighting.updateShadowCamera(this.controls.target, this.camera, this.orthoCamera, this.perspCamera)
 
-    // Auto-focus DOF on orbit target (center of screen on ground)
-    postFX.dofFocus.value = this.camera.position.distanceTo(controls.target)
-
-    // Fade out DOF when looking straight down (polar angle near 0)
-    const polar = controls.getPolarAngle() // 0 = top-down, PI/2 = horizon
-    const dofFade = Math.min(Math.max((polar - 0.3) / 0.5, 0), 1) // ramp 0.3..0.8 rad
-    postFX.dofAperture.value = (this.params.fx.dofAperture / 1000) * dofFade
+    // Auto-focus DOF on orbit target, scale focal length with zoom
+    const dist = this.camera.position.distanceTo(controls.target)
+    postFX.dofFocus.value = dist
+    const t = Math.min(Math.max((dist - 25) / (410 - 25), 0), 1) // 0=zoomed in, 1=zoomed out
+    postFX.dofFocalLength.value = 20 + t * 80 // 20 at close, 100 at far
 
     // Animate grain noise — quantize to noiseFPS for film-like grain (0 = static)
     const noiseFPS = this.params.fx.grainFPS

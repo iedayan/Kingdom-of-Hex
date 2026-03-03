@@ -1,8 +1,4 @@
 import { GUI } from 'three/addons/libs/lil-gui.module.min.js'
-import {
-  NoToneMapping, LinearToneMapping, ReinhardToneMapping,
-  CineonToneMapping, ACESFilmicToneMapping, AgXToneMapping, NeutralToneMapping,
-} from 'three/webgpu'
 import { setTreeNoiseFrequency, setTreeThreshold, setBuildingNoiseFrequency, setBuildingThreshold } from './hexmap/Decorations.js'
 import { HexTile } from './hexmap/HexTiles.js'
 
@@ -20,11 +16,8 @@ export class GUIManager {
       flythrough: false,
     },
     lighting: {
-      exposure: 1,
-      toneMapping: 'None',
       envIntensity: 0.95,
       dirLight: 2.15,
-      hemiLight: 0.25,
       shadowIntensity: 1.0,
       lightX: 35,
       lightY: 50,
@@ -42,12 +35,12 @@ export class GUIManager {
       ao: true,
       aoStrength: 2.7,
       aoRadius: 1,
-      aoBlur: 0.5,
+      aoDenoise: 5,
       aoFullRes: false,
       vignette: true,
       dof: true,
-      dofAperture: 0.21,
-      dofMaxblur: 0.005,
+      dofFocalLength: 50,
+      dofBokehScale: 3,
       grain: true,
       grainStrength: 0.1,
       grainFPS: 0,
@@ -55,7 +48,7 @@ export class GUIManager {
     debug: {
       view: 'final',
       originHelper: false,
-      debugCam: true,
+      debugCam: false,
       hexGrid: false,
       tileLabels: false,
       tileLabelMode: 'coords',
@@ -144,7 +137,7 @@ export class GUIManager {
       app.city.setAxesHelpersVisible(v)
     })
     gui.add(allParams.debug, 'debugCam').name('Debug Cam').onChange((v) => {
-      app.controls.maxPolarAngle = v ? Math.PI : 1.1
+      app.controls.maxPolarAngle = v ? Math.PI : 1.424
       app.controls.minDistance = v ? 0 : 25
       app.controls.maxDistance = v ? Infinity : 410
     })
@@ -331,30 +324,11 @@ export class GUIManager {
 
     // Lights folder
     const lightsFolder = gui.addFolder('Lights').close()
-    lightsFolder.add(allParams.lighting, 'exposure', 0, 2, 0.05).name('Exposure').onChange((v) => {
-      app.renderer.toneMappingExposure = v
-    })
-    const toneMappingMap = {
-      'None': NoToneMapping,
-      'Linear': LinearToneMapping,
-      'Reinhard': ReinhardToneMapping,
-      'Cineon': CineonToneMapping,
-      'ACES': ACESFilmicToneMapping,
-      'AgX': AgXToneMapping,
-      'Neutral': NeutralToneMapping,
-    }
-    lightsFolder.add(allParams.lighting, 'toneMapping', Object.keys(toneMappingMap)).name('Tone Mapping').onChange((v) => {
-      app.renderer.toneMapping = toneMappingMap[v]
-      if (app.postFX) app.postFX.postProcessing.needsUpdate = true
-    })
     lightsFolder.add(allParams.lighting, 'envIntensity', 0, 2, 0.05).name('Env Intensity').onChange((v) => {
       app.scene.environmentIntensity = v
     })
     lightsFolder.add(allParams.lighting, 'dirLight', 0, 5, 0.05).name('Dir Light').onChange((v) => {
       if (app.lighting.dirLight) app.lighting.dirLight.intensity = v
-    })
-    lightsFolder.add(allParams.lighting, 'hemiLight', 0, 5, 0.05).name('Hemi Light').onChange((v) => {
-      if (app.lighting.hemiLight) app.lighting.hemiLight.intensity = v
     })
     lightsFolder.add(allParams.lighting, 'shadowIntensity', 0, 1, 0.05).name('Shadow Intensity').onChange((v) => {
       if (app.lighting.dirLight) app.lighting.dirLight.shadow.intensity = v
@@ -392,8 +366,8 @@ export class GUIManager {
     fxFolder.add(allParams.fx, 'aoRadius', 0.01, 2, 0.01).name('AO Radius').onChange((v) => {
       if (app.aoPass) app.aoPass.radius.value = v
     })
-    fxFolder.add(allParams.fx, 'aoBlur', 0, 1, 0.01).name('AO Blur').onChange((v) => {
-      if (app.aoBlurAmount) app.aoBlurAmount.value = v
+    fxFolder.add(allParams.fx, 'aoDenoise', 0, 10, 1).name('AO Denoise').onChange((v) => {
+      if (app.aoDenoiseRadius) app.aoDenoiseRadius.value = v
     })
     fxFolder.add(allParams.fx, 'aoFullRes').name('AO Full Res').onChange((v) => {
       if (app.postFX?.aoPass) app.postFX.aoPass.resolutionScale = v ? 1 : 0.5
@@ -404,11 +378,11 @@ export class GUIManager {
     fxFolder.add(allParams.fx, 'dof').name('DOF').onChange((v) => {
       app.dofEnabled.value = v ? 1 : 0
     })
-    fxFolder.add(allParams.fx, 'dofAperture', 0, 1, 0.01).name('DOF Aperture').onChange((v) => {
-      app.dofAperture.value = v / 1000
+    fxFolder.add(allParams.fx, 'dofFocalLength', 1, 200, 1).name('DOF Focal Length').onChange((v) => {
+      app.dofFocalLength.value = v
     })
-    fxFolder.add(allParams.fx, 'dofMaxblur', 0.001, 0.02, 0.001).name('DOF Max Blur').onChange((v) => {
-      app.dofMaxblur.value = v
+    fxFolder.add(allParams.fx, 'dofBokehScale', 0.1, 5, 0.1).name('DOF Bokeh Scale').onChange((v) => {
+      app.dofBokehScale.value = v
     })
     fxFolder.add(allParams.fx, 'grain').name('Grain').onChange((v) => {
       app.grainEnabled.value = v ? 1 : 0
@@ -427,19 +401,11 @@ export class GUIManager {
     const { params } = app
 
     // Lighting
-    const toneMappingMap = {
-      'None': NoToneMapping, 'Linear': LinearToneMapping, 'Reinhard': ReinhardToneMapping,
-      'Cineon': CineonToneMapping, 'ACES': ACESFilmicToneMapping,
-      'AgX': AgXToneMapping, 'Neutral': NeutralToneMapping,
-    }
-    app.renderer.toneMapping = toneMappingMap[params.lighting.toneMapping] || NoToneMapping
-    app.renderer.toneMappingExposure = params.lighting.exposure
     app.scene.environmentIntensity = params.lighting.envIntensity
     if (app.lighting.dirLight) {
       app.lighting.dirLight.intensity = params.lighting.dirLight
       app.lighting.dirLight.shadow.intensity = params.lighting.shadowIntensity
     }
-    if (app.lighting.hemiLight) app.lighting.hemiLight.intensity = params.lighting.hemiLight
     if (app.lighting.dirLightOffset) {
       app.lighting.dirLightOffset.x = params.lighting.lightX
       app.lighting.dirLightOffset.y = params.lighting.lightY
@@ -462,18 +428,18 @@ export class GUIManager {
       app.aoPass.scale.value = params.fx.aoStrength
       app.aoPass.radius.value = params.fx.aoRadius
     }
-    if (app.aoBlurAmount) app.aoBlurAmount.value = params.fx.aoBlur
+    if (app.aoDenoiseRadius) app.aoDenoiseRadius.value = params.fx.aoDenoise
     app.vignetteEnabled.value = params.fx.vignette ? 1 : 0
     app.dofEnabled.value = params.fx.dof ? 1 : 0
-    app.dofAperture.value = params.fx.dofAperture / 1000
-    app.dofMaxblur.value = params.fx.dofMaxblur
+    app.dofFocalLength.value = params.fx.dofFocalLength
+    app.dofBokehScale.value = params.fx.dofBokehScale
     app.grainEnabled.value = params.fx.grain ? 1 : 0
     app.grainStrength.value = params.fx.grainStrength
 
     // Camera
     app.perspCamera.fov = params.camera.fov
     app.perspCamera.updateProjectionMatrix()
-    app.controls.maxPolarAngle = params.debug.debugCam ? Math.PI : 1.1
+    app.controls.maxPolarAngle = params.debug.debugCam ? Math.PI : 1.424
     app.controls.minDistance = params.debug.debugCam ? 0 : 25
     app.controls.maxDistance = params.debug.debugCam ? Infinity : 410
     if (app.axesHelper) app.axesHelper.visible = params.debug.originHelper

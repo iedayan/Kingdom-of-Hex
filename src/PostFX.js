@@ -18,7 +18,7 @@ import {
   blendOverlay,
 } from 'three/tsl'
 import { ao } from 'three/addons/tsl/display/GTAONode.js'
-import { gaussianBlur } from 'three/addons/tsl/display/GaussianBlurNode.js'
+import { denoise } from 'three/addons/tsl/display/DenoiseNode.js'
 import { dof } from 'three/addons/tsl/display/DepthOfFieldNode.js'
 
 export class PostFX {
@@ -39,13 +39,13 @@ export class PostFX {
     // Debug view: 0=final, 1=color, 2=depth, 3=normal, 4=AO, 5=overlay, 6=effects
     this.debugView = uniform(0)
 
-    // AO parameters
-    this.aoBlurAmount = uniform(1)
+    // AO denoise parameters
+    this.aoDenoiseRadius = uniform(5)
 
     // DOF parameters
     this.dofFocus = uniform(100)
-    this.dofAperture = uniform(0.025)
-    this.dofMaxblur = uniform(0.01)
+    this.dofFocalLength = uniform(50)
+    this.dofBokehScale = uniform(1)
 
     // Grain parameters
     this.grainStrength = uniform(0.1)
@@ -100,7 +100,7 @@ export class PostFX {
     const scenePassViewZ = scenePass.getViewZNode()
 
     // ---- DOF (on scene color texture, before AO) ----
-    const dofResult = dof(scenePassColor, scenePassViewZ, this.dofFocus, this.dofAperture, this.dofMaxblur)
+    const dofResult = dof(scenePassColor, scenePassViewZ, this.dofFocus, this.dofFocalLength, this.dofBokehScale)
     const afterDof = mix(scenePassColor, dofResult, this.dofEnabled)
 
     // ---- GTAO pass (uses depth/normals from scene, not affected by DOF) ----
@@ -115,11 +115,13 @@ export class PostFX {
     // AO texture for debug view
     const aoTexture = this.aoPass.getTextureNode()
 
-    // Blur the AO to reduce banding artifacts (r183: AO is in .r channel only)
-    const blurredAO = gaussianBlur(aoTexture, this.aoBlurAmount, 4).r // sigma, radius
+    // Denoise AO (edge-aware, no halo artifacts)
+    this.aoDenoisePass = denoise(aoTexture, scenePassDepth, scenePassNormal, camera)
+    this.aoDenoisePass.radius = this.aoDenoiseRadius
+    const denoisedAO = this.aoDenoisePass.r
 
     // Soften AO: raise to power < 1 to reduce harshness, then blend
-    const softenedAO = blurredAO.pow(0.5) // Square root makes it softer
+    const softenedAO = denoisedAO.pow(0.5) // Square root makes it softer
     const withAO = mix(afterDof, afterDof.mul(softenedAO), this.aoEnabled)
 
     // ---- Water layer compositing (masked to water areas via mask RT) ----
@@ -170,7 +172,7 @@ export class PostFX {
     // Debug views
     const depthViz = vec3(scenePassDepth)
     const normalViz = scenePassNormal.mul(0.5).add(0.5)
-    const aoViz = vec3(blurredAO, blurredAO, blurredAO)
+    const aoViz = vec3(denoisedAO, denoisedAO, denoisedAO)
     const overlayViz = overlayTexture.rgb
     const waterMaskViz = vec3(waterMaskSample.r)
 
