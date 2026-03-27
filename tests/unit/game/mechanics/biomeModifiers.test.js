@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { productionMultiplier, scaleYield, getAttackDamage } from '../../../../src/gameplay/map-rules/biomeModifiers.js'
+import { productionMultiplier, scaleYield, getAttackDamage, getDefenseReduction } from '../../../../src/gameplay/map-rules/biomeModifiers.js'
 
 describe('biomeModifiers', () => {
   describe('productionMultiplier', () => {
@@ -119,6 +119,52 @@ describe('biomeModifiers', () => {
       )
 
       expect(damage).toBe(2)
+    })
+
+    it('gives player units explicit counters into boss raids', () => {
+      const session = { getBiome: () => 'temperate' }
+      const app = { city: { globalCells: new Map() } }
+
+      const archerDamage = getAttackDamage(
+        session,
+        app,
+        '0,0,0',
+        { type: 'archer', atk: 4 },
+        '2,0,-2',
+        { type: 'goblin_warlord', hp: 16 }
+      )
+      const knightDamage = getAttackDamage(
+        session,
+        app,
+        '0,0,0',
+        { type: 'knight', atk: 6 },
+        '1,0,-1',
+        { type: 'goblin_brute', hp: 10 }
+      )
+
+      expect(archerDamage).toBe(6)
+      expect(knightDamage).toBe(8)
+    })
+  })
+
+  describe('getDefenseReduction', () => {
+    it('grants brace and support reduction to player units', () => {
+      const session = {
+        getNeighbors: () => ['1,0,-1', '0,1,-1'],
+        objects: new Map([
+          ['1,0,-1', { type: 'tower', owner: 'player' }],
+          ['0,1,-1', { type: 'scout', owner: 'player' }],
+        ]),
+      }
+
+      const reduction = getDefenseReduction(session, {}, '0,0,0', {
+        type: 'archer',
+        owner: 'player',
+        movedThisTurn: false,
+        mpRemaining: 1,
+      })
+
+      expect(reduction).toBe(2)
     })
   })
 })

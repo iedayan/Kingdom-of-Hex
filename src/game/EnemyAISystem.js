@@ -3,6 +3,7 @@ import { CAPITAL_CUBE_KEY } from './goals.js'
 import { log } from '../core/logging/gameConsole.js'
 import { getAttackDamage } from '../gameplay/map-rules/biomeModifiers.js'
 import { COMBAT } from './constants.js'
+import { EventBus } from '../core/events/EventBus.js'
 
 export class EnemyAISystem {
   constructor(session, app, combatSystem) {
@@ -12,6 +13,7 @@ export class EnemyAISystem {
   }
 
   async processEnemyTurn() {
+    this._clearEnemyAttackBuffs()
     const enemies = Array.from(this.session.objects.entries())
       .filter(([_, o]) => o.owner === 'enemy')
     
@@ -31,6 +33,7 @@ export class EnemyAISystem {
     }
 
     await this._processTowerAttacks()
+    this._clearEnemyAttackBuffs()
   }
 
   _getPlayerTowerKeys() {
@@ -59,6 +62,13 @@ export class EnemyAISystem {
       await this.combatSystem.attack(cKey, target)
       await this._delay(800)
       if (this._checkCapitalOverrun()) return
+      return
+    }
+
+    const specialIntent = this._getSpecialIntent(cKey, obj)
+    if (specialIntent) {
+      await this._executeSpecialIntent(cKey, obj, specialIntent)
+      await this._delay(650)
       return
     }
 
@@ -170,6 +180,49 @@ export class EnemyAISystem {
         return { distanceWeight: 7, towerWeight: 2, adjacentPlayerWeight: 2.5, adjacentStructureWeight: 4.5, rangedPressureWeight: 1.5 }
       default:
         return { distanceWeight: 10, towerWeight: 6, adjacentPlayerWeight: 0.5, adjacentStructureWeight: 1.5, rangedPressureWeight: 1 }
+    }
+  }
+
+  _getSpecialIntent(cKey, enemy) {
+    if (enemy?.type !== 'goblin_warlord') return null
+
+    const allies = this.session.getNeighbors(cKey).filter((neighborKey) => {
+      const ally = this.session.objects.get(neighborKey)
+      return ally && ally.owner === 'enemy' && ally.type !== 'goblin_warlord'
+    })
+
+    const pressuredTargets = this._getTargetsInRange(cKey, 3)
+    if (allies.length === 0 || pressuredTargets.length === 0) return null
+
+    return {
+      type: 'command',
+      icon: '📯',
+      text: `Battle Shout +1 ATK to ${allies.length} allies`,
+      allies,
+      buffAttack: 1,
+    }
+  }
+
+  async _executeSpecialIntent(cKey, enemy, intent) {
+    if (intent.type !== 'command') return
+
+    for (const allyKey of intent.allies) {
+      const ally = this.session.objects.get(allyKey)
+      if (!ally) continue
+      ally.tempAtkBonus = (ally.tempAtkBonus ?? 0) + intent.buffAttack
+      EventBus.emit('floatingText', { text: '+1 ATK', position: allyKey, color: '#ffb86b' })
+    }
+
+    EventBus.emit('cameraPan', { target: cKey })
+    EventBus.emit('notification', { text: 'WARLORD COMMAND', duration: 1400 })
+    EventBus.emit('screenShake', { intensity: 0.45, duration: 180 })
+  }
+
+  _clearEnemyAttackBuffs() {
+    for (const obj of this.session.objects.values()) {
+      if (obj.owner === 'enemy' && obj.tempAtkBonus) {
+        delete obj.tempAtkBonus
+      }
     }
   }
 

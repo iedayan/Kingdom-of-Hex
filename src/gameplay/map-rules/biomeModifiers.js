@@ -29,6 +29,34 @@ function getMatchupBonus(attackerType, targetType) {
   return COMBAT.ATTACK_BONUSES?.[attackerType]?.[targetType] ?? 0
 }
 
+function isPlayerUnit(target) {
+  return ['scout', 'archer', 'knight'].includes(target?.type)
+}
+
+export function getDefenseReduction(session, app, targetKey, target) {
+  if (!target || target.owner !== 'player' || !targetKey) return 0
+
+  let reduction = 0
+  const neighbors = session.getNeighbors?.(targetKey) ?? []
+  let adjacentSupport = false
+  let adjacentTower = false
+
+  for (const neighborKey of neighbors) {
+    const ally = session.objects?.get(neighborKey)
+    if (!ally || ally.owner !== 'player') continue
+    if (ally.type === 'tower') adjacentTower = true
+    else if (neighborKey !== targetKey) adjacentSupport = true
+  }
+
+  if (adjacentSupport) reduction += 1
+  if (adjacentTower && isPlayerUnit(target)) reduction += 1
+  if (isPlayerUnit(target) && target.movedThisTurn === false && typeof target.mpRemaining === 'number' && target.mpRemaining > 0) {
+    reduction += 1
+  }
+
+  return Math.min(reduction, 2)
+}
+
 /**
  * @param {import('../../game/GameSession.js').GameSession} session
  * @param {object} app
@@ -48,6 +76,7 @@ export function getAttackDamage(session, app, attackerKey, attacker, targetKey =
   }
 
   damage += getMatchupBonus(attacker.type, target?.type)
+  damage += attacker.tempAtkBonus ?? 0
 
   const attackerLevel = getTileLevel(app, attackerKey, attacker)
   const targetLevel = getTileLevel(app, targetKey, target)

@@ -648,7 +648,8 @@ export class HexMapInteraction {
               if (hoveredObj && hoveredObj.owner !== actingUnit?.owner) {
                 const preview = game._combatSystem?.previewAttack?.(this.selectedUnitKey, hoveredKey)
                 if (preview?.canAttack) {
-                  const text = `Attack ${this._describeObject(hoveredObj)} for ${preview.damage} (${preview.distance}/${preview.range})${preview.lethal ? ' KO' : `, ${preview.remainingHp} HP left`}`
+                  const defenseNote = preview.defense > 0 ? `, -${preview.defense} guard` : ''
+                  const text = `Attack ${this._describeObject(hoveredObj)} for ${preview.damage} (${preview.distance}/${preview.range}${defenseNote})${preview.lethal ? ' KO' : `, ${preview.remainingHp} HP left`}`
                   App.instance.gameHud?.setContextHint(text, preview.lethal ? 'success' : 'info')
                 } else if (preview?.reason) {
                   App.instance.gameHud?.setContextHint(preview.reason, 'error')

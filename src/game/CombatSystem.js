@@ -1,5 +1,5 @@
 import { HexUtils } from './HexUtils.js'
-import { getAttackDamage } from '../gameplay/map-rules/biomeModifiers.js'
+import { getAttackDamage, getDefenseReduction } from '../gameplay/map-rules/biomeModifiers.js'
 import { Sounds } from '../core/audio/Sounds.js'
 import { log } from '../core/logging/gameConsole.js'
 import { EventBus } from '../core/events/EventBus.js'
@@ -24,7 +24,18 @@ export class CombatSystem {
     this._spendAttackAction(attacker)
     log(`[COMBAT] ${attacker.owner} ${attacker.type} attacks ${target.owner} ${target.type}!`, 'color: red')
 
-    EventBus.emit('screenShake', { intensity: 0.3, duration: 150 })
+    const importantAttack = attacker.type === 'goblin_warlord' || target.type === 'goblin_warlord' || target.type === 'tower' || preview.lethal
+    if (importantAttack) {
+      if (attacker.type === 'goblin_warlord') {
+        EventBus.emit('notification', { text: 'WARLORD STRIKES', duration: 1000 })
+      } else if (target.type === 'tower' && attacker.owner === 'enemy') {
+        EventBus.emit('notification', { text: 'Tower under attack', duration: 900 })
+      }
+      EventBus.emit('cameraPan', { target: targetKey })
+      EventBus.emit('screenShake', { intensity: 0.55, duration: 220 })
+    } else {
+      EventBus.emit('screenShake', { intensity: 0.3, duration: 150 })
+    }
     await this._fireProjectile(attackerKey, targetKey, attacker)
 
     const damage = preview.damage
@@ -80,7 +91,9 @@ export class CombatSystem {
       }
     }
 
-    const damage = getAttackDamage(this.session, this.app, attackerKey, attacker, targetKey, target)
+    const attackDamage = getAttackDamage(this.session, this.app, attackerKey, attacker, targetKey, target)
+    const defense = getDefenseReduction(this.session, this.app, targetKey, target)
+    const damage = Math.max(1, attackDamage - defense)
     const remainingHp = Math.max(0, (target.hp ?? 0) - damage)
 
     return {
@@ -91,6 +104,7 @@ export class CombatSystem {
       damage,
       distance,
       range,
+      defense,
       lethal: damage >= (target.hp ?? Infinity),
       remainingHp,
     }

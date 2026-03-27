@@ -150,6 +150,29 @@ describe('EnemyAISystem', () => {
     })
   })
 
+  describe('warlord abilities', () => {
+    it('telegraphs a command when allies are nearby', () => {
+      session.spawnUnit('0,0,0', 'goblin_warlord', 'enemy')
+      session.spawnUnit('1,0,-1', 'goblin', 'enemy')
+      session.spawnUnit('-1,0,1', 'goblin_raider', 'enemy')
+      session.spawnUnit('0,1,-1', 'scout', 'player')
+
+      const intent = ai._getSpecialIntent('0,0,0', session.objects.get('0,0,0'))
+      expect(intent?.type).toBe('command')
+      expect(intent?.allies.length).toBe(2)
+    })
+
+    it('applies temporary attack buffs to adjacent allies', async () => {
+      session.spawnUnit('0,0,0', 'goblin_warlord', 'enemy')
+      session.spawnUnit('1,0,-1', 'goblin', 'enemy')
+      const intent = { type: 'command', allies: ['1,0,-1'], buffAttack: 1 }
+
+      await ai._executeSpecialIntent('0,0,0', session.objects.get('0,0,0'), intent)
+
+      expect(session.objects.get('1,0,-1').tempAtkBonus).toBe(1)
+    })
+  })
+
   describe('_countAdjacentPlayer', () => {
     it('returns 0 with no adjacent players', () => {
       expect(ai._countAdjacentPlayer('0,0,0')).toBe(0)

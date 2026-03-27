@@ -94,9 +94,10 @@ export class EnemyIntentSystem {
 
     if (adjacentTargets.length > 0) {
       const target = ai?._chooseTarget?.(adjacentTargets, cKey, obj) ?? this._chooseTarget(session, adjacentTargets)
+      const preview = session._combatSystem?.previewAttack?.(cKey, target)
       const targetObj = session.objects.get(target)
-      const damage = getAttackDamage(session, this.app, cKey, obj, target, targetObj)
-      const lethal = damage >= (targetObj?.hp ?? Infinity)
+      const damage = preview?.damage ?? getAttackDamage(session, this.app, cKey, obj, target, targetObj)
+      const lethal = preview?.lethal ?? (damage >= (targetObj?.hp ?? Infinity))
       return {
         type: 'attack',
         target,
@@ -106,6 +107,16 @@ export class EnemyIntentSystem {
         targetType: targetObj?.type,
         targetName: this._getDisplayName(targetObj?.type),
         icon: this._getAttackIcon(obj.type),
+      }
+    }
+
+    const special = ai?._getSpecialIntent?.(cKey, obj)
+    if (special) {
+      return {
+        type: special.type,
+        icon: special.icon,
+        attacker: obj.type,
+        text: special.text,
       }
     }
 
@@ -254,6 +265,11 @@ export class EnemyIntentSystem {
         `
         
         this._drawMoveVisual(cKey, intent.destination)
+      } else if (intent.type === 'command') {
+        card.innerHTML = `
+          <span style="font-size: 14px;">${intent.icon}</span>
+          <span style="color: #ffb86b;">${intent.text}</span>
+        `
       }
 
       this.container.appendChild(card)
