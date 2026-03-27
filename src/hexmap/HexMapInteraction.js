@@ -733,7 +733,13 @@ export class HexMapInteraction {
                 const preview = game._combatSystem?.previewAttack?.(this.selectedUnitKey, hoveredKey)
                 if (preview?.canAttack) {
                   const defenseNote = preview.defense > 0 ? `, -${preview.defense} guard` : ''
-                  const text = `Attack ${this._describeObject(hoveredObj)} for ${preview.damage} (${preview.distance}/${preview.range}${defenseNote})${preview.lethal ? ' KO' : `, ${preview.remainingHp} HP left`}`
+                  const exposure = game.getThreatPreview?.(
+                    this.selectedUnitKey,
+                    'player',
+                    preview.lethal ? [hoveredKey] : []
+                  ) || { attackers: 0, totalDamage: 0 }
+                  const riskNote = exposure.attackers > 0 ? ` · holds under ${exposure.attackers} threat` : ' · low retaliation pressure'
+                  const text = `Attack ${this._describeObject(hoveredObj)} for ${preview.damage} (${preview.distance}/${preview.range}${defenseNote})${preview.lethal ? ' KO' : `, ${preview.remainingHp} HP left`}${riskNote}`
                   App.instance.gameHud?.setContextHint(text, preview.lethal ? 'success' : 'info')
                 } else if (preview?.reason) {
                   App.instance.gameHud?.setContextHint(preview.reason, 'error')
@@ -742,9 +748,11 @@ export class HexMapInteraction {
                 const pathData = HexUtils.findPath(this.selectedUnitKey, hoveredKey, App.instance)
                 const mpRemaining = typeof actingUnit?.mpRemaining === 'number' ? actingUnit.mpRemaining : (typeof actingUnit?.mp === 'number' ? actingUnit.mp : 0)
                 if (pathData) {
-                  const tone = pathData.cost <= mpRemaining ? 'success' : 'error'
+                  const threat = game.getThreatPreview?.(hoveredKey, 'player') || { attackers: 0, totalDamage: 0 }
+                  const tone = pathData.cost <= mpRemaining ? (threat.attackers > 0 ? 'info' : 'success') : 'error'
                   const suffix = pathData.cost <= mpRemaining ? '' : ' · out of reach'
-                  App.instance.gameHud?.setContextHint(`Move costs ${pathData.cost}/${mpRemaining} MP${suffix}`, tone)
+                  const threatText = threat.attackers > 0 ? ` · ${threat.attackers} enemy${threat.attackers === 1 ? '' : 'ies'} threaten for ~${threat.totalDamage}` : ' · safe lane'
+                  App.instance.gameHud?.setContextHint(`Move costs ${pathData.cost}/${mpRemaining} MP${suffix}${threatText}`, tone)
                 } else {
                   App.instance.gameHud?.setContextHint('')
                 }
@@ -829,6 +837,7 @@ export class HexMapInteraction {
               this.selectedUnitKey = cKey
               unitManager.selectUnit(cKey)
               this.updateMoveReachableTiles()
+              App.instance.gameHud?.updateGameUI?.()
               log(`[GAME] Selected unit at ${cKey}`, 'color: blue')
               return false
             } else if (game && unitManager.units.has(cKey) && game.objects.get(cKey)?.owner !== 'player') {
@@ -849,12 +858,14 @@ export class HexMapInteraction {
                  this.selectedUnitKey = cKey
                  unitManager.selectUnit(cKey)
                  this.updateMoveReachableTiles()
+                 App.instance.gameHud?.updateGameUI?.()
                  return false
                } else {
                   if (pathData) log(`[MOVE] Too far! Costs ${pathData.cost} MP (Unit has ${unit.mp}).`, 'color: orange')
                   this.selectedUnitKey = null
                   unitManager.selectUnit(null)
                   this.clearMovePreview()
+                  App.instance.gameHud?.updateGameUI?.()
                }
             } else if (this.selectedUnitKey && game.objects.has(cKey)) {
                const target = game.objects.get(cKey)
@@ -871,6 +882,7 @@ export class HexMapInteraction {
                   if (dist <= (attacker.range || 1)) {
                     game.attack(this.selectedUnitKey, cKey)
                     this.updateMoveReachableTiles()
+                    App.instance.gameHud?.updateGameUI?.()
                     return false
                   }
                }

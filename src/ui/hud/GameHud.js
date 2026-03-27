@@ -14,6 +14,7 @@ export class GameHud {
     this.app = app
     this.selectedBuilding = null
     this.selectedUnitType = null
+    this._endTurnConfirmUntil = 0
   }
 
   shakeButton(btn) {
@@ -226,7 +227,7 @@ export class GameHud {
     })
 
     const techBtn = document.createElement('button'); techBtn.className = 'hx-btn'; techBtn.innerHTML = '<i data-lucide="flask-conical" style="width:16px;height:16px;margin-bottom:4px;color:#00ffff"></i><br><b>TECH</b><br><span style="font-size:9px;opacity:0.6" aria-hidden="true">&nbsp;</span>'; techBtn.onclick = () => app.toggleResearchModal();
-    app.nextTurnBtn = document.createElement('button'); app.nextTurnBtn.className = 'hx-btn hx-btn--primary'; app.nextTurnBtn.innerHTML = 'END TURN ➔'; app.nextTurnBtn.onclick = () => app.game?.nextTurn();
+    app.nextTurnBtn = document.createElement('button'); app.nextTurnBtn.className = 'hx-btn hx-btn--primary'; app.nextTurnBtn.innerHTML = 'END TURN ➔'; app.nextTurnBtn.onclick = () => this.handleEndTurnClick();
 
     // Single flex row: scrollable economy + military | divider | TECH | END TURN (no wrapping).
     const selectorsRow = document.createElement('div')
@@ -266,6 +267,11 @@ export class GameHud {
     app.contextHint.className = 'hx-panel hx-panel--glass'
     app.contextHint.style.cssText = `position:fixed; bottom:132px; left:50%; transform:translateX(-50%); color:var(--hx-text-secondary); font-size:11px; font-weight:600; padding:4px 12px; border-radius:var(--hx-radius-pill); display:none; pointer-events:none;`
     document.body.appendChild(app.contextHint)
+
+    app.activationQueue = document.createElement('div')
+    app.activationQueue.className = 'hx-panel hx-panel--glass hx-activation-queue'
+    app.activationQueue.style.cssText = `position:fixed; right:20px; bottom:292px; min-width:220px; max-width:280px; display:none; pointer-events:none;`
+    document.body.appendChild(app.activationQueue)
 
     app.endOverlay = document.createElement('div')
     app.endOverlay.className = 'hx-end-overlay'
@@ -353,6 +359,25 @@ export class GameHud {
     else app.actionHelp.style.display = 'none';
   }
 
+  handleEndTurnClick() {
+    const app = this.app
+    const warnings = app.game?.getEndTurnWarnings?.() || []
+    const now = Date.now()
+    if (warnings.length > 0 && now > this._endTurnConfirmUntil) {
+      this._endTurnConfirmUntil = now + 2500
+      this.setContextHint(`End turn anyway? ${warnings.slice(0, 2).join(' · ')}`, 'error')
+      if (app.nextTurnBtn) {
+        app.nextTurnBtn.textContent = 'CONFIRM END TURN'
+        app.nextTurnBtn.style.borderColor = 'rgba(239,68,68,0.8)'
+        app.nextTurnBtn.style.boxShadow = '0 0 0 1px rgba(239,68,68,0.38) inset'
+      }
+      return
+    }
+
+    this._endTurnConfirmUntil = 0
+    app.game?.nextTurn?.()
+  }
+
   updateGameUI() {
     const app = this.app
     if (!app.game || !app.buildingsList || !app.unitsList) return
@@ -403,9 +428,41 @@ export class GameHud {
     }
     if (app.nextTurnBtn) {
       const unacted = app.game.countUnactedPlayerUnits?.() || 0
-      app.nextTurnBtn.textContent = unacted > 0 ? `END TURN (${unacted} UNACTED)` : 'END TURN ➔'
-      app.nextTurnBtn.style.borderColor = unacted > 0 ? 'rgba(251,146,60,0.75)' : ''
-      app.nextTurnBtn.style.boxShadow = unacted > 0 ? '0 0 0 1px rgba(251,146,60,0.4) inset' : ''
+      const confirmActive = Date.now() <= this._endTurnConfirmUntil
+      app.nextTurnBtn.textContent = confirmActive ? 'CONFIRM END TURN' : (unacted > 0 ? `END TURN (${unacted} UNACTED)` : 'END TURN ➔')
+      app.nextTurnBtn.style.borderColor = confirmActive ? 'rgba(239,68,68,0.8)' : (unacted > 0 ? 'rgba(251,146,60,0.75)' : '')
+      app.nextTurnBtn.style.boxShadow = confirmActive ? '0 0 0 1px rgba(239,68,68,0.38) inset' : (unacted > 0 ? '0 0 0 1px rgba(251,146,60,0.4) inset' : '')
+      const endTurnWarnings = app.game.getEndTurnWarnings?.() || []
+      const baseTitle = app.game.getUpcomingWavePreview?.()?.summary || ''
+      if (endTurnWarnings.length > 0) {
+        app.nextTurnBtn.title = `${baseTitle ? `${baseTitle}\n` : ''}${endTurnWarnings.join(' | ')}`
+      } else {
+        app.nextTurnBtn.title = baseTitle
+      }
+    }
+    if (app.activationQueue && app.game.getActionablePlayerUnits) {
+      const units = app.game.getActionablePlayerUnits().slice(0, 4)
+      const selectedKey = app.city?.interaction?.selectedUnitKey ?? null
+      if (units.length > 0) {
+        app.activationQueue.innerHTML = `
+          <div class="hx-activation-queue__title">Ready Units</div>
+          <div class="hx-activation-queue__list">
+            ${units.map((entry) => {
+              const pressure = app.game.getThreatPreview?.(entry.key, 'player') || { attackers: 0 }
+              const status = entry.ready ? `${entry.mpRemaining} MP` : 'spent'
+              const active = entry.key === selectedKey ? ' hx-activation-queue__item--active' : ''
+              return `<div class="hx-activation-queue__item${active}">
+                <span>${entry.obj.type.toUpperCase()}</span>
+                <span>${status}${pressure.attackers > 0 ? ` · ${pressure.attackers} threat` : ''}</span>
+              </div>`
+            }).join('')}
+          </div>
+        `
+        app.activationQueue.style.display = 'block'
+      } else {
+        app.activationQueue.style.display = 'none'
+        app.activationQueue.innerHTML = ''
+      }
     }
     
     // Update victory progress bar

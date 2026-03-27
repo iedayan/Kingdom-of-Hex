@@ -518,6 +518,47 @@ body.hx-high-contrast {
   font-size: 11px;
 }
 
+.hx-activation-queue {
+  padding: 10px 12px;
+  border-radius: 14px;
+  background: linear-gradient(180deg, rgba(17, 20, 29, 0.92) 0%, rgba(11, 13, 19, 0.84) 100%);
+  border: 1px solid rgba(212, 165, 116, 0.14);
+}
+
+.hx-activation-queue__title {
+  font-family: var(--hx-font-ui);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--hx-accent-gold);
+}
+
+.hx-activation-queue__list {
+  margin-top: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.hx-activation-queue__item {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-family: var(--hx-font-ui);
+  font-size: 11px;
+  color: var(--hx-text-secondary);
+  padding: 5px 8px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.hx-activation-queue__item--active {
+  color: var(--hx-text-primary);
+  background: rgba(125, 211, 252, 0.12);
+  box-shadow: 0 0 0 1px rgba(125, 211, 252, 0.24) inset;
+}
+
 /* 3D label on crown hex (CSS2D) */
 .hx-capital-tag {
   font-family: var(--hx-font-ui);

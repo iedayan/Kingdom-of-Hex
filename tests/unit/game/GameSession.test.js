@@ -395,6 +395,52 @@ describe('GameSession', () => {
     })
   })
 
+  describe('decision support', () => {
+    it('prioritizes ready units in actionable order', () => {
+      session.spawnUnit('0,0,0', 'scout', 'player')
+      session.spawnUnit('1,0,-1', 'archer', 'player')
+      session.spawnUnit('2,0,-2', 'knight', 'player')
+
+      const scout = session.objects.get('0,0,0')
+      const archer = session.objects.get('1,0,-1')
+      const knight = session.objects.get('2,0,-2')
+      scout.turnCreated = 0
+      archer.turnCreated = 0
+      knight.turnCreated = 0
+      scout.mpRemaining = 0
+      archer.mpRemaining = 2
+      knight.mpRemaining = 1
+
+      const ordered = session.getActionablePlayerUnits()
+      expect(ordered[0].key).toBe('1,0,-1')
+      expect(ordered[1].key).toBe('2,0,-2')
+      expect(ordered[2].key).toBe('0,0,0')
+    })
+
+    it('estimates visible enemy threat on a tile', () => {
+      session.addObject('1,0,-1', { type: 'goblin_slinger', owner: 'enemy', atk: 2, range: 2 })
+      session.addObject('0,1,-1', { type: 'goblin', owner: 'enemy', atk: 3, range: 1 })
+      session.revealed.add('1,0,-1')
+      session.revealed.add('0,1,-1')
+
+      const preview = session.getThreatPreview('0,0,0', 'player')
+      expect(preview.attackers).toBe(2)
+      expect(preview.totalDamage).toBe(5)
+    })
+
+    it('warns before ending turn with ready units and food trouble', () => {
+      session.resources.food = 1
+      session.spawnUnit('0,0,0', 'scout', 'player')
+      const scout = session.objects.get('0,0,0')
+      scout.turnCreated = 0
+      scout.mpRemaining = 2
+
+      const warnings = session.getEndTurnWarnings()
+      expect(warnings.some((warning) => warning.includes('still ready'))).toBe(true)
+      expect(warnings.some((warning) => warning.includes('Food'))).toBe(true)
+    })
+  })
+
   describe('tech tree', () => {
     it('has all required technologies', () => {
       expect(session.techTree.archery).toBeDefined()

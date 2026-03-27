@@ -113,21 +113,11 @@ const KeyboardController = {
   },
 
   _cycleToNextUnit() {
-    if (!this.target.game?.objects) return
-    
-    const playerUnits = Array.from(this.target.game.objects.entries())
-      .filter(([_, o]) => o.owner === 'player' && ['scout', 'archer', 'knight'].includes(o.type))
-    
-    if (playerUnits.length === 0) return
-    
-    const currentKey = this.target.selectedUnitKey
-    const currentIndex = playerUnits.findIndex(([k]) => k === currentKey)
-    const nextIndex = (currentIndex + 1) % playerUnits.length
-    const [nextKey] = playerUnits[nextIndex]
-    
-    if (this.target.selectUnit) {
-      this.target.selectUnit(nextKey)
-    }
+    if (!this.target.game?.getNextActionableUnitKey) return
+    const interaction = this.target.city?.interaction
+    const currentKey = interaction?.selectedUnitKey ?? this.target.selectedUnitKey ?? null
+    const nextKey = this.target.game.getNextActionableUnitKey(currentKey)
+    if (nextKey && this.target.selectUnit) this.target.selectUnit(nextKey)
   },
 
   _panCamera(direction) {

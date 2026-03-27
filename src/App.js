@@ -701,7 +701,16 @@ export class App {
   }
 
   selectUnit(key) {
+    this.selectedUnitKey = key || null
+    const interaction = this.city?.interaction
+    if (interaction) {
+      interaction.selectedUnitKey = key || null
+      if (key) interaction.updateMoveReachableTiles?.()
+      else interaction.clearMovePreview?.()
+    }
     if (this.unitManager) this.unitManager.selectUnit(key)
+    if (key) this.panToTile?.(key, 0.45)
+    this.gameHud?.updateGameUI?.()
   }
 
   clearSelections() {

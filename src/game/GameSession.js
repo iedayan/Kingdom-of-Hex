@@ -382,6 +382,130 @@ export class GameSession {
     return count
   }
 
+  getActionablePlayerUnits() {
+    const rolePriority = { knight: 0, archer: 1, scout: 2 }
+    return Array.from(this.objects.entries())
+      .filter(([_, obj]) => obj.owner === 'player' && ['scout', 'archer', 'knight'].includes(obj.type))
+      .map(([key, obj]) => {
+        const mpRemaining = typeof obj.mpRemaining === 'number' ? obj.mpRemaining : (typeof obj.mp === 'number' ? obj.mp : 0)
+        const ready = mpRemaining > 0 && obj.movedThisTurn === false && typeof obj.turnCreated === 'number' && obj.turnCreated < this.turn
+        return { key, obj, ready, mpRemaining }
+      })
+      .sort((a, b) => {
+        if (a.ready !== b.ready) return a.ready ? -1 : 1
+        if (a.mpRemaining !== b.mpRemaining) return b.mpRemaining - a.mpRemaining
+        const pressureA = this.getThreatPreview(a.key, 'player').attackers
+        const pressureB = this.getThreatPreview(b.key, 'player').attackers
+        if (pressureA !== pressureB) return pressureB - pressureA
+        const roleA = rolePriority[a.obj.type] ?? 9
+        const roleB = rolePriority[b.obj.type] ?? 9
+        if (roleA !== roleB) return roleA - roleB
+        return a.key.localeCompare(b.key)
+      })
+  }
+
+  getNextActionableUnitKey(currentKey = null) {
+    const units = this.getActionablePlayerUnits()
+    if (units.length === 0) return null
+    const currentIndex = units.findIndex((entry) => entry.key === currentKey)
+    const nextIndex = currentIndex >= 0 ? (currentIndex + 1) % units.length : 0
+    return units[nextIndex]?.key ?? null
+  }
+
+  getThreatPreview(targetKey, targetOwner = 'player', excludeKeys = []) {
+    if (!targetKey) return { attackers: 0, totalDamage: 0 }
+    const excluded = new Set(excludeKeys)
+    const enemyOwner = targetOwner === 'player' ? 'enemy' : 'player'
+    let attackers = 0
+    let totalDamage = 0
+
+    for (const [cKey, obj] of this.objects.entries()) {
+      if (excluded.has(cKey) || obj.owner !== enemyOwner) continue
+      if (enemyOwner === 'enemy' && !this.revealed.has(cKey)) continue
+      const range = Math.max(1, obj.range || 1)
+      if (HexUtils.distance(cKey, targetKey) > range) continue
+      attackers += 1
+      totalDamage += Math.max(1, typeof obj.atk === 'number' ? obj.atk : 1)
+    }
+
+    return { attackers, totalDamage }
+  }
+
+  getProjectedEconomySummary() {
+    let foodIncome = 0
+    let goldIncome = 0
+    let foodUpkeep = 0
+    let marketFoodSpent = 0
+
+    for (const obj of this.objects.values()) {
+      if (obj.owner === 'player' && ['scout', 'archer', 'knight'].includes(obj.type)) {
+        foodUpkeep += GAME.UNIT_FOOD_UPKEEP
+      }
+    }
+
+    for (const [cKey, obj] of this.objects.entries()) {
+      if (obj.owner !== 'player') continue
+      const biome = getBiomeForCube(this, this.app, cKey)
+      const mult = productionMultiplier(biome, obj.type)
+      const neighbors = this.getNeighbors(cKey)
+
+      if (obj.type === 'farm') {
+        const bonus = neighbors.filter((n) => this.objects.get(n)?.type === 'farm').length * ECONOMY.FARM_BONUS_PER_ADJACENT
+        foodIncome += scaleYield((ECONOMY.FARM_YIELD + bonus) * (this.runRules.foodYieldMultiplier || 1), mult)
+        goldIncome += scaleYield(ECONOMY.FARM_GOLD_YIELD + (this.runRules.farmGoldBonus || 0), mult)
+      }
+
+      if (obj.type === 'market') {
+        const adjBuildings = neighbors.filter((n) => {
+          const adj = this.objects.get(n)
+          return adj && adj.owner === 'player' && !['scout', 'archer', 'knight'].includes(adj.type)
+        }).length
+        const marketGold = scaleYield(ECONOMY.MARKET_GOLD_BASE + adjBuildings * ECONOMY.MARKET_GOLD_PER_ADJACENT, mult)
+        if (this.resources.food + foodIncome - foodUpkeep - marketFoodSpent >= ECONOMY.MARKET_FOOD_THRESHOLD) {
+          marketFoodSpent += ECONOMY.MARKET_FOOD_COST
+          goldIncome += marketGold
+        }
+      }
+    }
+
+    const foodAfterUpkeep = this.resources.food + foodIncome - marketFoodSpent - foodUpkeep
+    return {
+      foodIncome,
+      foodUpkeep,
+      marketFoodSpent,
+      goldIncome,
+      foodAfterUpkeep,
+      starvationNextTurn: foodAfterUpkeep < 0,
+    }
+  }
+
+  getEndTurnWarnings() {
+    const warnings = []
+    const readyUnits = this.getActionablePlayerUnits().filter((entry) => entry.ready)
+    if (readyUnits.length > 0) {
+      warnings.push(`${readyUnits.length} unit${readyUnits.length === 1 ? '' : 's'} still ready`)
+    }
+
+    const projected = this.getProjectedEconomySummary()
+    if (projected.starvationNextTurn) {
+      warnings.push(`Food deficit next turn (${projected.foodAfterUpkeep})`)
+    } else if (projected.foodAfterUpkeep <= Math.max(6, projected.foodUpkeep)) {
+      warnings.push('Food reserves will be tight next turn')
+    }
+
+    const nextWave = this.getUpcomingWavePreview()
+    const turnsToWave = nextWave ? nextWave.turn - this.turn : null
+    if (typeof turnsToWave === 'number' && turnsToWave <= 1) {
+      const defenses = Array.from(this.objects.values()).filter((obj) =>
+        obj.owner === 'player' && ['tower', 'archer', 'knight'].includes(obj.type)
+      ).length
+      if (defenses === 0) warnings.push('Raid imminent and no frontline defense is ready')
+      else warnings.push(`Raid on turn ${nextWave.turn}`)
+    }
+
+    return warnings
+  }
+
   getBiome(gridKey) {
     if (!this.biomes.has(gridKey)) {
       const types = ['temperate', 'winter', 'wasteland']
