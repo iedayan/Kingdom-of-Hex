@@ -16,6 +16,17 @@ dist
 dist-ssr
 *.local
 
+# Generated test artifacts
+playwright-report/
+test-results/
+
+# Local export/staging outputs
+staging/
+kingdom-of-hex*.zip
+
+# Local screenshot dumps
+public/Screenshot *.png
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
