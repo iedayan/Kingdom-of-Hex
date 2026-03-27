@@ -624,6 +624,7 @@ export class HexMapInteraction {
               let isValid = false
               if (cell && game) {
                 const def = TILE_LIST[cell.type]
+                const neighborTypes = game.getNeighbors(hoveredKey).map((neighborKey) => game.objects.get(neighborKey)?.type).filter(Boolean)
                 const result = assessPlacement({
                   selectedBuilding: App.instance.selectedBuilding,
                   selectedUnitType: App.instance.selectedUnitType,
@@ -631,13 +632,19 @@ export class HexMapInteraction {
                   isOwned: game.isOwned(hoveredKey),
                   tileName: def.name,
                   tileLevel: cell.level ?? 0,
+                  neighborTypes,
+                  turn: game.turn,
+                  resources: game.resources,
+                  distanceToCapital: HexUtils.distance(hoveredKey, CAPITAL_CUBE_KEY),
                 })
                 isValid = result.isValid
                 if (!isValid) {
                   const extra = occupiedMsg ? ` (${occupiedMsg})` : ''
                   App.instance.gameHud?.setContextHint(`${result.reason}${extra}`, 'error')
                 } else {
-                  App.instance.gameHud?.setContextHint(`Valid tile for ${selectedId}.`, 'success')
+                  const tone = result.quality === 'strong' ? 'success' : (result.quality === 'risky' ? 'error' : 'info')
+                  const message = result.hint || `Valid tile for ${selectedId}.`
+                  App.instance.gameHud?.setContextHint(message, tone)
                 }
               }
 
@@ -864,8 +871,12 @@ export class HexMapInteraction {
                   isOwned: game.isOwned(cKey),
                   tileName: def.name,
                   tileLevel: tile.level ?? 0,
+                  neighborTypes: game.getNeighbors(cKey).map((neighborKey) => game.objects.get(neighborKey)?.type).filter(Boolean),
+                  turn: game.turn,
+                  resources: game.resources,
+                  distanceToCapital: HexUtils.distance(cKey, CAPITAL_CUBE_KEY),
                 })
-                App.instance.gameHud?.setContextHint(result.reason || 'Invalid placement.', 'error')
+                App.instance.gameHud?.setContextHint(result.reason || result.hint || 'Invalid placement.', 'error')
                 Sounds.play('incorrect', 1.0, 0.2, 0.8)
               }
             }

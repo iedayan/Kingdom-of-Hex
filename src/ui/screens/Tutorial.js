@@ -10,25 +10,43 @@ export function createTutorialModal(app) {
 
   const modal = document.createElement('div')
   modal.style.cssText = `
-    background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
-    border: 1px solid #4ecdc4;
-    border-radius: 16px;
+    background: linear-gradient(145deg, rgba(16, 18, 27, 0.98) 0%, rgba(26, 32, 49, 0.95) 100%);
+    border: 1px solid rgba(212, 165, 116, 0.34);
+    border-radius: 20px;
     padding: 2rem;
-    max-width: 600px;
+    max-width: 720px;
     max-height: 80vh;
     overflow-y: auto;
     color: white;
-    box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+    box-shadow: 0 28px 80px rgba(0,0,0,0.6);
   `
 
   modal.innerHTML = `
     <div style="text-align:center; margin-bottom:1.5rem;">
-      <h2 style="color:#4ecdc4; margin:0 0 0.5rem; font-size:1.8rem;">How to Play</h2>
-      <p style="color:#888; margin:0;">Kingdom of Hex</p>
+      <h2 style="color:#d4a574; margin:0 0 0.5rem; font-size:1.95rem; letter-spacing:0.08em; text-transform:uppercase;">Hold the Crown</h2>
+      <p style="color:#9aa3b2; margin:0;">Your first five turns decide the whole run.</p>
     </div>
 
     <div style="margin-bottom:1.5rem;">
-      <h3 style="color:#ffd93d; margin:0 0 0.5rem; font-size:1.1rem;">🎯 Goal</h3>
+      <h3 style="color:#ffd93d; margin:0 0 0.5rem; font-size:1.1rem;">Opening Plan</h3>
+      <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(150px, 1fr)); gap:0.75rem; color:#d7dce5; font-size:0.92rem;">
+        <div style="padding:0.8rem; border-radius:12px; background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.06);">
+          <strong style="display:block; color:#d4a574; margin-bottom:0.35rem;">1. Stabilize food</strong>
+          Build a <b>Farm</b> early if you plan to field units or markets.
+        </div>
+        <div style="padding:0.8rem; border-radius:12px; background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.06);">
+          <strong style="display:block; color:#d4a574; margin-bottom:0.35rem;">2. Claim tempo</strong>
+          A <b>Scout</b> reveals new land fast. A <b>Library</b> accelerates your first tech spike.
+        </div>
+        <div style="padding:0.8rem; border-radius:12px; background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.06);">
+          <strong style="display:block; color:#d4a574; margin-bottom:0.35rem;">3. Prepare for raids</strong>
+          By the first raid, you want an answer: <b>Tower</b>, <b>Archer</b>, or <b>Knight</b>.
+        </div>
+      </div>
+    </div>
+
+    <div style="margin-bottom:1.5rem;">
+      <h3 style="color:#ffd93d; margin:0 0 0.5rem; font-size:1.1rem;">Goal</h3>
       <p style="color:#ccc; margin:0; line-height:1.6;">
         Accumulate <strong style="color:#ffd700;">1,000 Gold</strong> before turn <strong style="color:#4ecdc4;">50</strong> to win. 
         Defend your capital - if enemies capture it, you lose!
@@ -36,32 +54,32 @@ export function createTutorialModal(app) {
     </div>
 
     <div style="margin-bottom:1.5rem;">
-      <h3 style="color:#ffd93d; margin:0 0 0.5rem; font-size:1.1rem;">🏗️ Buildings</h3>
+      <h3 style="color:#ffd93d; margin:0 0 0.5rem; font-size:1.1rem;">Building Roles</h3>
       <div style="display:grid; gap:0.5rem; color:#ccc; font-size:0.9rem;">
-        <div><strong style="color:#cd853f;">🪓 Lumberjack:</strong> +10 Wood/turn</div>
-        <div><strong style="color:#98fb98;">🌾 Farm:</strong> +10 Food/turn</div>
-        <div><strong style="color:#c0c0c0;">⛏️ Mine:</strong> +5 Stone/turn</div>
-        <div><strong style="color:#ffd700;">💰 Market:</strong> 5 Food → 15 Gold (needs Currency)</div>
-        <div><strong style="color:#ff6b6b;">🏰 Tower:</strong> Auto-attacks nearby enemies (needs Ballistics)</div>
-        <div><strong style="color:#00ffff;">📚 Library:</strong> +8 Science/turn (needs Scholarship)</div>
+        <div><strong style="color:#cd853f;">Lumber:</strong> fuels mines, libraries, and markets. Cluster camps together.</div>
+        <div><strong style="color:#98fb98;">Farm:</strong> supports unit upkeep and markets. Chains of farms scale fast.</div>
+        <div><strong style="color:#c0c0c0;">Mine:</strong> turns wood into fortification tempo. Great in pairs.</div>
+        <div><strong style="color:#ffd700;">Market:</strong> converts food into gold. Strongest inside a developed district.</div>
+        <div><strong style="color:#ff6b6b;">Tower:</strong> anchors defense and protects nearby troops.</div>
+        <div><strong style="color:#00ffff;">Library:</strong> accelerates your military and economy unlocks.</div>
       </div>
     </div>
 
     <div style="margin-bottom:1.5rem;">
-      <h3 style="color:#ffd93d; margin:0 0 0.5rem; font-size:1.1rem;">⚔️ Units</h3>
+      <h3 style="color:#ffd93d; margin:0 0 0.5rem; font-size:1.1rem;">Combat Roles</h3>
       <div style="display:grid; gap:0.5rem; color:#ccc; font-size:0.9rem;">
-        <div><strong style="color:#4ecdc4;">🧭 Scout:</strong> Fast (3 MP), 10 HP, 2 ATK</div>
-        <div><strong style="color:#ff6b6b;">🏹 Archer:</strong> Ranged (2 range), 8 HP, 4 ATK</div>
-        <div><strong style="color:#ffd93d;">🛡️ Knight:</strong> Heavy hitter, 20 HP, 6 ATK</div>
+        <div><strong style="color:#4ecdc4;">Scout:</strong> reveal land, finish weak enemies, secure objectives.</div>
+        <div><strong style="color:#ff6b6b;">Archer:</strong> punish raiders and warlords from behind your line.</div>
+        <div><strong style="color:#ffd93d;">Knight:</strong> break brutes and hold the frontline.</div>
       </div>
     </div>
 
     <div style="margin-bottom:1.5rem;">
-      <h3 style="color:#ffd93d; margin:0 0 0.5rem; font-size:1.1rem;">🔬 Research</h3>
+      <h3 style="color:#ffd93d; margin:0 0 0.5rem; font-size:1.1rem;">Research</h3>
       <p style="color:#ccc; margin:0; font-size:0.9rem; line-height:1.6;">
-        Click the beaker icon to research technologies. 
-        <strong style="color:#00ffff;">Scholarship</strong> unlocks Libraries for more Science.
-        <strong style="color:#4ecdc4;">Archery</strong> unlocks Archers and Ballistics.
+        Click the beaker icon early. 
+        <strong style="color:#00ffff;">Scholarship</strong> is the fastest way into libraries and long-term scaling.
+        <strong style="color:#4ecdc4;">Archery</strong> opens archers and the path to towers.
       </p>
     </div>
 
@@ -78,11 +96,11 @@ export function createTutorialModal(app) {
     </div>
 
     <div style="text-align:center; margin-bottom:1rem;">
-      <p style="color:#666; font-size:0.85rem; margin:0 0 1rem;">
-        Tip: Build Farms early for food, then Lumberjacks for economy.
+      <p style="color:#8f99a8; font-size:0.85rem; margin:0 0 1rem;">
+        Tip: hover placement tiles and read the hint bubble. It now tells you whether a tile is merely legal or actually strong.
       </p>
       <button id="tutorial-close" style="
-        background: linear-gradient(135deg, #4ecdc4 0%, #44a08d 100%);
+        background: linear-gradient(135deg, #d4a574 0%, #b8864f 100%);
         border: none; padding: 0.75rem 2rem;
         border-radius: 8px; color: white;
         font-size: 1rem; font-weight: bold;
@@ -106,6 +124,7 @@ export function createTutorialModal(app) {
     }
   }
 
+  document.body.appendChild(overlay)
   return overlay
 }
 

@@ -342,13 +342,11 @@ describe('GameSession', () => {
       expect(report.marketConversions).toBe(1)
       expect(report.marketGoldGained).toBe(18)
       expect(report.upkeepPaid).toBe(2)
-      expect(report.objectiveRewards.food).toBe(80)
-      expect(report.completedObjectives).toContain('Protect the Caravan')
       expect(report.net.gold).toBe(20)
-      expect(report.net.food).toBe(83)
+      expect(report.net.food).toBe(3)
       expect(report.research?.scienceSpent).toBe(2)
       expect(report.notes.some((note) => note.includes('Markets traded'))).toBe(true)
-      expect(report.notes.some((note) => note.includes('Objective cleared'))).toBe(true)
+      expect(report.notes.some((note) => note.includes('Objective cleared'))).toBe(false)
     })
 
     it('flags starvation turns and low food warnings', async () => {

@@ -179,7 +179,7 @@ export function defineOptionalObjectives() {
       completed: false,
       failed: false,
       check(session) {
-        return [...session.objects.values()].some((o) => o.owner === 'player' && o.type === 'scout')
+        return session.turn >= 12 && [...session.objects.values()].some((o) => o.owner === 'player' && o.type === 'scout')
       },
     },
     {
@@ -193,6 +193,47 @@ export function defineOptionalObjectives() {
       check(session) {
         const mines = [...session.objects.values()].filter((o) => o.owner === 'player' && o.type === 'mine').length
         return mines >= 2
+      },
+    },
+    {
+      id: 'market_charter',
+      title: 'Market Charter',
+      flavor: 'Create a true district of coin and knowledge before the war economy hardens.',
+      deadline: 24,
+      reward: { gold: 90, science: 45 },
+      completed: false,
+      failed: false,
+      check(session) {
+        const marketCount = [...session.objects.values()].filter((o) => o.owner === 'player' && o.type === 'market').length
+        const libraryCount = [...session.objects.values()].filter((o) => o.owner === 'player' && o.type === 'library').length
+        return marketCount >= 1 && libraryCount >= 1
+      },
+    },
+    {
+      id: 'standing_host',
+      title: 'Standing Host',
+      flavor: 'Field a disciplined force before the warlord banners rise.',
+      deadline: 22,
+      reward: { gold: 70, stone: 50, food: 40 },
+      completed: false,
+      failed: false,
+      check(session) {
+        const hasKnight = [...session.objects.values()].some((o) => o.owner === 'player' && o.type === 'knight')
+        const hasArcher = [...session.objects.values()].some((o) => o.owner === 'player' && o.type === 'archer')
+        return hasKnight && hasArcher
+      },
+    },
+    {
+      id: 'breadbasket',
+      title: 'Breadbasket',
+      flavor: 'Grow enough grain that the realm can support a real army.',
+      deadline: 14,
+      reward: { food: 120, gold: 35 },
+      completed: false,
+      failed: false,
+      check(session) {
+        const farms = [...session.objects.values()].filter((o) => o.owner === 'player' && o.type === 'farm').length
+        return farms >= 3
       },
     },
   ]

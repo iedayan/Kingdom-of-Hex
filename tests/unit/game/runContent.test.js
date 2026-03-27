@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { buildEnemyWavePlan, describeEnemyWavePlan } from '../../../src/game/runContent.js'
+import { buildEnemyWavePlan, defineOptionalObjectives, describeEnemyWavePlan } from '../../../src/game/runContent.js'
 
 describe('runContent wave planning', () => {
   it('builds deterministic wave plans from the same seed and turn', () => {
@@ -34,5 +34,27 @@ describe('runContent wave planning', () => {
       }
     }
     expect(found).toBe(true)
+  })
+
+  it('offers a broader midgame objective set', () => {
+    const objectives = defineOptionalObjectives()
+    const ids = objectives.map((objective) => objective.id)
+    expect(ids).toContain('market_charter')
+    expect(ids).toContain('standing_host')
+    expect(ids).toContain('breadbasket')
+  })
+
+  it('keeps caravan protection from auto-completing too early', () => {
+    const protectCaravan = defineOptionalObjectives().find((objective) => objective.id === 'protect_caravan')
+    const earlySession = {
+      turn: 4,
+      objects: new Map([['0,0,0', { owner: 'player', type: 'scout' }]]),
+    }
+    const midSession = {
+      turn: 12,
+      objects: new Map([['0,0,0', { owner: 'player', type: 'scout' }]]),
+    }
+    expect(protectCaravan.check(earlySession)).toBe(false)
+    expect(protectCaravan.check(midSession)).toBe(true)
   })
 })

@@ -132,7 +132,7 @@ export function updateHowToPlayOverlay(app) {
     return
   }
 
-  if (app._howToPlayDismissed || game.phase !== 'playing' || game.turn > 3) {
+  if (app._howToPlayDismissed || game.phase !== 'playing' || game.turn > 6) {
     app.howToPlayOverlay.style.display = 'none'
     return
   }
@@ -141,12 +141,27 @@ export function updateHowToPlayOverlay(app) {
   const buildingTypes = new Set(['lumberjack', 'farm', 'mine', 'market', 'tower', 'library'])
   const unitTypes = new Set(['scout', 'archer', 'knight'])
   const hasBuilding = playerObjs.some((o) => buildingTypes.has(o.type))
+  const hasFarm = playerObjs.some((o) => o.type === 'farm')
+  const hasEconomy = playerObjs.some((o) => o.type === 'lumberjack' || o.type === 'farm' || o.type === 'mine')
   const hasUnit = playerObjs.some((o) => unitTypes.has(o.type))
+  const hasTower = playerObjs.some((o) => o.type === 'tower')
+  const hasArcher = playerObjs.some((o) => o.type === 'archer')
+  const hasKnight = playerObjs.some((o) => o.type === 'knight')
   const hasMoved = playerObjs.some((o) => o.movedThisTurn === true)
   const revealedCount = game?.revealed?.size ?? 0
+  const hasResearch = Boolean(game.currentResearch)
+  const nextWave = game.getUpcomingWavePreview?.()
+  const turnsToWave = typeof nextWave?.turn === 'number' ? nextWave.turn - game.turn : null
+  const food = game.resources?.food ?? 0
 
   let stage = 'build'
-  if (hasBuilding) stage = !hasUnit ? 'deploy' : !hasMoved ? 'move' : 'endturn'
+  if (!hasEconomy) stage = 'build'
+  else if (!hasFarm && food < 25) stage = 'food'
+  else if (!hasUnit) stage = 'deploy'
+  else if (!hasMoved) stage = 'move'
+  else if (!hasResearch) stage = 'research'
+  else if (typeof turnsToWave === 'number' && turnsToWave <= 2 && !hasTower && !hasArcher && !hasKnight) stage = 'defend'
+  else stage = 'endturn'
 
   if (app._howToPlayStage !== stage) {
     app._howToPlayStage = stage
@@ -165,22 +180,38 @@ export function updateHowToPlayOverlay(app) {
   let html = ''
   if (stage === 'build') {
     html = `
-      <b>Step 1:</b> Place your first building.<br/>
-      Start with <b>Lumber</b> or <b>Farm</b>. Green = valid tile, red = invalid.
+      <b>Step 1:</b> Start your economy.<br/>
+      Place a <b>Farm</b> if you want units soon, or <b>Lumber</b> if you need infrastructure first. Hover tiles and follow the placement hint.
+    `
+  } else if (stage === 'food') {
+    html = `
+      <b>Stabilize food before greed.</b><br/>
+      Your reserves are light. Add a <b>Farm</b> before stacking more units or markets.
     `
   } else if (stage === 'deploy') {
     html = `
       <b>Step 2:</b> Deploy a unit.<br/>
-      Use unit buttons and place a <b>Scout</b> on grass. Press <b>Esc</b> to cancel selection.
+      Open with a <b>Scout</b> for map control, or rush research if you want archers/towers first.
     `
   } else if (stage === 'move' && !exploredAfterBaseline && !hasMoved) {
     html = `
       <b>Step 2:</b> Move a unit.<br/>
-      Click your unit, then click a <b>reachable</b> tile (cyan rings) to move.
+      Click your unit, then click a <b>reachable</b> tile (cyan rings) to move. Scouts should push outward; fighters should screen likely raid lanes.
+    `
+  } else if (stage === 'research') {
+    html = `
+      <b>Open the Tech Lab.</b><br/>
+      Start <b>Scholarship</b> for faster scaling or <b>Archery</b> if the frontier already feels exposed.
+    `
+  } else if (stage === 'defend') {
+    html = `
+      <b>The first raid is close.</b><br/>
+      Prepare a response now: build a <b>Tower</b>, field an <b>Archer</b>, or station a <b>Knight</b> where raiders will connect.
     `
   } else {
     html = `
-      <b>Step 3:</b> Press <b>END TURN</b> to begin the raid phase.
+      <b>Advance the clock.</b><br/>
+      Press <b>END TURN</b>. Read the turn report after each harvest and adjust before the next raid.
     `
   }
 

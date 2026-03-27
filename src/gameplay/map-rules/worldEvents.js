@@ -1,12 +1,14 @@
 import { log } from '../../core/logging/gameConsole.js'
 import { Sounds } from '../../core/audio/Sounds.js'
+import { createRng, hashSeed } from '../../SeededRandom.js'
+import { CAPITAL_CUBE_KEY } from '../../game/goals.js'
 
 /**
  * World Event System - Randomized narrative choices.
  * Fulfills GDD Section 18.
  */
 
-const EVENTS = [
+export const WORLD_EVENTS = [
   {
     id: 'merchant',
     title: 'Wandering Merchant',
@@ -170,16 +172,106 @@ const EVENTS = [
       },
     ],
   },
+  {
+    id: 'signal_fires',
+    title: 'Signal Fires',
+    text: 'Hilltop watchmen offer to extend the beacon network across the frontier.',
+    options: [
+      {
+        label: 'Raise the Beacons',
+        desc: 'Reveal and claim a wider border ring.',
+        act: (gs) => {
+          gs.claimRadius(CAPITAL_CUBE_KEY, 4)
+          gs.revealRadius(CAPITAL_CUBE_KEY, 4)
+          log('[EVENT] Signal Fires: the frontier is revealed.')
+        },
+      },
+      {
+        label: 'Chart Safe Roads',
+        desc: '+55 Science, +25 Wood',
+        act: (gs) => {
+          gs.resources.science += 55
+          gs.resources.wood += 25
+          log('[EVENT] Signal Fires: scholars map the frontier.')
+        },
+      },
+    ],
+  },
+  {
+    id: 'granary_accord',
+    title: 'Granary Accord',
+    text: 'Village elders propose a realm-wide grain compact to blunt the next lean season.',
+    options: [
+      {
+        label: 'Fund Granaries',
+        desc: '+20 Food now, Farms yield more food for the rest of the run.',
+        req: (gs) => gs.resources.gold >= 30,
+        act: (gs) => {
+          gs.resources.gold -= 30
+          gs.resources.food += 20
+          gs.runRules.foodYieldMultiplier = (gs.runRules.foodYieldMultiplier || 1) + 0.15
+          log('[EVENT] Granary Accord: farm output rises.')
+        },
+      },
+      {
+        label: 'Privatize Surplus',
+        desc: 'Farms gain +1 Gold, +35 Food',
+        act: (gs) => {
+          gs.runRules.farmGoldBonus = (gs.runRules.farmGoldBonus || 0) + 1
+          gs.resources.food += 35
+          log('[EVENT] Granary Accord: grain now feeds the treasury.')
+        },
+      },
+    ],
+  },
+  {
+    id: 'war_foundry',
+    title: 'War Foundry',
+    text: 'Master smiths from the interior arrive with experimental armor and siege fittings.',
+    options: [
+      {
+        label: 'Commission Weapons',
+        desc: '+35 progress to current research or +35 Science if idle.',
+        act: (gs) => {
+          if (gs.currentResearch && gs.techTree[gs.currentResearch]) {
+            const tech = gs.techTree[gs.currentResearch]
+            tech.progress = Math.min(tech.cost, tech.progress + 35)
+          } else {
+            gs.resources.science += 35
+          }
+          gs.resources.stone += 20
+          log('[EVENT] War Foundry: research momentum accelerates.')
+        },
+      },
+      {
+        label: 'Cast Tower Bolts',
+        desc: '+70 Stone, +30 Wood',
+        act: (gs) => {
+          gs.resources.stone += 70
+          gs.resources.wood += 30
+          log('[EVENT] War Foundry: siege stores replenished.')
+        },
+      },
+    ],
+  },
 ]
+
+export function pickWorldEvent(gs) {
+  const recent = gs._recentEventIds || []
+  const pool = WORLD_EVENTS.filter((event) => !recent.includes(event.id))
+  const source = pool.length > 0 ? pool : WORLD_EVENTS
+  const seed = hashSeed(gs.seed ?? 0, 'world-event', gs.turn, recent.join(','))
+  const rng = createRng(seed)
+  return source[Math.floor(rng() * source.length)]
+}
 
 export function tryResolveWorldEvent(gs, app) {
   // Trigger event every 10 turns
   if (gs.turn > 1 && gs.turn % 10 === 0) {
     const recent = gs._recentEventIds || []
-    const pool = EVENTS.filter((e) => !recent.includes(e.id))
-    const source = pool.length > 0 ? pool : EVENTS
-    const event = source[Math.floor(Math.random() * source.length)]
+    const event = pickWorldEvent(gs)
     gs._recentEventIds = [...recent, event.id].slice(-3)
+    gs._lastWorldEventId = event.id
     app.showEventModal(event)
   }
 }
