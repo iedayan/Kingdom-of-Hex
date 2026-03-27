@@ -6,7 +6,7 @@ import { getBiomeForCube } from '../gameplay/map-rules/gridAccess.js'
 import { productionMultiplier, scaleYield } from '../gameplay/map-rules/biomeModifiers.js'
 import { tryResolveWorldEvent } from '../gameplay/map-rules/worldEvents.js'
 import { WIN_GOLD_GOAL, MAX_TURNS, CAPITAL_CUBE_KEY, CAPITAL_SEAT_NAME } from './goals.js'
-import { random as seededRandom } from '../SeededRandom.js'
+import { random as seededRandom, createRng, hashSeed } from '../SeededRandom.js'
 import { Sounds } from '../core/audio/Sounds.js'
 import { EventBus } from '../core/events/EventBus.js'
 import { CombatSystem } from './CombatSystem.js'
@@ -21,7 +21,7 @@ import {
   META,
   VISION,
 } from './constants.js'
-import { RUN_MODIFIERS, defineOptionalObjectives, pickEnemyVariantForWave } from './runContent.js'
+import { RUN_MODIFIERS, defineOptionalObjectives, buildEnemyWavePlan, describeEnemyWavePlan } from './runContent.js'
 
 export class GameSession {
   constructor({ seed, app }) {
@@ -249,23 +249,86 @@ export class GameSession {
       }
     }
     if (grassTiles.length > 0) {
+      const plan = buildEnemyWavePlan(this.turn, {
+        harsherRaids: this.runRules.harsherRaids,
+        seed: this.seed,
+      })
       const preferred = grassTiles.filter(t => {
         const d = HexUtils.distance(t.key, CAPITAL_CUBE_KEY)
         return d >= ENEMY.SPAWN_DISTANCE_MIN && d <= ENEMY.SPAWN_DISTANCE_MAX
       })
       const pool = preferred.length > 0 ? preferred : grassTiles
-      const target = pool[Math.floor(seededRandom() * pool.length)]
-
-      const waveUnits = this.runRules.harsherRaids ? 2 : 1
+      const rng = createRng(hashSeed(this.seed, 'wave-spawn', this.turn))
       const available = [...pool]
-      for (let i = 0; i < waveUnits; i++) {
+      const spawnedTypes = []
+      for (const unitType of plan.units) {
         if (available.length === 0) break
-        const idx = Math.floor(seededRandom() * available.length)
-        const spawnAt = available.splice(idx, 1)[0]
-        const unitType = pickEnemyVariantForWave(this.turn)
+        const spawnAt = this._pickWaveSpawnTile(available, unitType, rng)
+        const idx = available.findIndex(tile => tile.key === spawnAt.key)
+        if (idx >= 0) available.splice(idx, 1)
         this.spawnUnit(spawnAt.key, unitType, 'enemy')
+        spawnedTypes.push(unitType)
         EventBus.emit('floatingText', { text: `${unitType.replace('goblin_', 'GOBLIN ').toUpperCase()} ARRIVES!`, position: spawnAt.key, color: 'var(--hx-danger)' })
       }
+      if (spawnedTypes.length > 0) {
+        EventBus.emit('notification', {
+          text: `${plan.name} incoming`,
+          duration: 1800,
+        })
+      }
+    }
+  }
+
+  _pickWaveSpawnTile(available, unitType, rng) {
+    const playerTargets = [...this.objects.entries()]
+      .filter(([_, obj]) => obj.owner === 'player')
+      .map(([key, obj]) => ({ key, obj }))
+
+    let best = available[0]
+    let bestScore = Infinity
+
+    for (const tile of available) {
+      const distCapital = HexUtils.distance(tile.key, CAPITAL_CUBE_KEY)
+      let nearestStructure = 99
+      let nearestTower = 99
+      let nearestUnit = 99
+
+      for (const target of playerTargets) {
+        const distance = HexUtils.distance(tile.key, target.key)
+        if (['scout', 'archer', 'knight'].includes(target.obj.type)) {
+          nearestUnit = Math.min(nearestUnit, distance)
+        } else {
+          nearestStructure = Math.min(nearestStructure, distance)
+          if (target.obj.type === 'tower') nearestTower = Math.min(nearestTower, distance)
+        }
+      }
+
+      const score = this._scoreWaveSpawn(unitType, {
+        distCapital,
+        nearestStructure,
+        nearestTower,
+        nearestUnit,
+      }) + rng() * 0.01
+
+      if (score < bestScore) {
+        best = tile
+        bestScore = score
+      }
+    }
+
+    return best
+  }
+
+  _scoreWaveSpawn(unitType, metrics) {
+    switch (unitType) {
+      case 'goblin_raider':
+        return metrics.nearestStructure * 5 + metrics.distCapital * 2 + metrics.nearestTower
+      case 'goblin_slinger':
+        return Math.abs(metrics.nearestUnit - 3) * 4 + metrics.nearestTower * 3 + metrics.distCapital
+      case 'goblin_brute':
+        return metrics.nearestTower * 6 + metrics.nearestStructure * 2 + metrics.distCapital
+      default:
+        return metrics.distCapital * 4 + metrics.nearestStructure * 2 + metrics.nearestUnit
     }
   }
 
@@ -273,6 +336,26 @@ export class GameSession {
     const firstTurn = this.runRules.harsherRaids ? Math.max(6, ENEMY.FIRST_WAVE_TURN - 1) : ENEMY.FIRST_WAVE_TURN
     if (turn < firstTurn) return false
     return (turn - firstTurn) % ENEMY.WAVE_PERIOD === 0
+  }
+
+  getNextWaveTurn(fromTurn = this.turn) {
+    const firstTurn = this.runRules.harsherRaids ? Math.max(6, ENEMY.FIRST_WAVE_TURN - 1) : ENEMY.FIRST_WAVE_TURN
+    if (fromTurn <= firstTurn) return firstTurn
+    const delta = fromTurn - firstTurn
+    return firstTurn + Math.ceil(delta / ENEMY.WAVE_PERIOD) * ENEMY.WAVE_PERIOD
+  }
+
+  getUpcomingWavePreview() {
+    const nextTurn = this.getNextWaveTurn()
+    const plan = buildEnemyWavePlan(nextTurn, {
+      harsherRaids: this.runRules.harsherRaids,
+      seed: this.seed,
+    })
+    return {
+      turn: nextTurn,
+      plan,
+      summary: describeEnemyWavePlan(plan),
+    }
   }
 
   countUnactedPlayerUnits(turn = this.turn) {

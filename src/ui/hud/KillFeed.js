@@ -31,7 +31,7 @@ export class KillFeed {
   }
 
   addHit(data) {
-    const { damage, targetType } = data
+    const { damage, targetType, attackerType, remainingHp, lethal } = data
     const entry = document.createElement('div')
     entry.className = 'kill-feed-entry hit'
     entry.style.cssText = `
@@ -49,7 +49,8 @@ export class KillFeed {
       opacity: 0;
       transform: translateX(24px);
     `
-    entry.innerHTML = `<span>💥</span><span>${this.capitalize(targetType)} takes ${damage}</span>`
+    const tail = lethal ? 'and falls' : `(${remainingHp} hp left)`
+    entry.innerHTML = `<span>${this.iconFor(attackerType)}</span><span>${this.capitalize(targetType)} takes ${damage} ${tail}</span>`
     this.container.appendChild(entry)
     this.events.push(entry)
     gsap.to(entry, { opacity: 1, x: 0, duration: 0.18, ease: 'power2.out' })
@@ -63,14 +64,6 @@ export class KillFeed {
 
   addKill(data) {
     const { killerType, killedType } = data
-    
-    const icons = {
-      scout: '⚔️',
-      archer: '🏹',
-      knight: '🛡️',
-      goblin: '👺',
-      tower: '🏰',
-    }
     
     const entry = document.createElement('div')
     entry.className = 'kill-feed-entry'
@@ -91,10 +84,10 @@ export class KillFeed {
     `
     
     entry.innerHTML = `
-      <span style="font-size: 16px;">${icons[killerType] || '⚔️'}</span>
+      <span style="font-size: 16px;">${this.iconFor(killerType)}</span>
       <span style="color: #4ade80;">${this.capitalize(killerType)}</span>
       <span style="color: rgba(255,255,255,0.5);">→</span>
-      <span style="font-size: 16px;">${icons[killedType] || '💀'}</span>
+      <span style="font-size: 16px;">${this.iconFor(killedType)}</span>
       <span style="color: #ef4444;">${this.capitalize(killedType)}</span>
     `
     
@@ -131,6 +124,20 @@ export class KillFeed {
         if (idx > -1) this.events.splice(idx, 1)
       }
     }, this.eventDuration)
+  }
+
+  iconFor(type) {
+    const icons = {
+      scout: '⚔️',
+      archer: '🏹',
+      knight: '🛡️',
+      goblin: '👺',
+      goblin_raider: '🗡️',
+      goblin_brute: '🪓',
+      goblin_slinger: '🏹',
+      tower: '🏰',
+    }
+    return icons[type] || '⚔️'
   }
 
   addBounty(data) {

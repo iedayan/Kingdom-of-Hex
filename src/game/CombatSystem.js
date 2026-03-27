@@ -31,7 +31,7 @@ export class CombatSystem {
     const damage = getAttackDamage(this.session, this.app, attackerKey, attacker, targetKey, target)
     target.hp -= damage
 
-    this._showDamageEffect(targetKey, target, damage)
+    this._showDamageEffect(attacker, targetKey, target, damage)
     Sounds.duckMusic?.(0.55, 220)
 
     if (target.hp <= 0) {
@@ -66,11 +66,19 @@ export class CombatSystem {
     await this.app.unitManager.fireProjectile(attackerKey, targetKey, projType)
   }
 
-  _showDamageEffect(targetKey, target, damage) {
+  _showDamageEffect(attacker, targetKey, target, damage) {
     if (!this.app.unitManager) return
     this.app.unitManager.animateHit(targetKey)
     Sounds.play('pop', 1.0, 0.3, 0.6)
-    EventBus.emit('combatHit', { targetKey, damage, targetType: target?.type, targetOwner: target?.owner })
+    EventBus.emit('combatHit', {
+      targetKey,
+      damage,
+      targetType: target?.type,
+      targetOwner: target?.owner,
+      attackerType: attacker?.type,
+      remainingHp: Math.max(0, target?.hp ?? 0),
+      lethal: (target?.hp ?? 0) <= 0,
+    })
     const pos = this.app.unitManager.getWorldPosition(HexUtils.parse(targetKey), target.level || 0)
     this.app.spawnFloatingText(`-${damage} HP`, pos, 'var(--hx-danger)')
   }

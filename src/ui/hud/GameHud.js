@@ -149,6 +149,11 @@ export class GameHud {
     app.objectiveCaption.style.cssText = 'font-size: var(--hx-text-xs); color: var(--hx-text-muted); text-align:center;'
     app.hudTop.appendChild(app.objectiveCaption)
 
+    app.waveCaption = document.createElement('div')
+    app.waveCaption.className = 'hx-font-ui'
+    app.waveCaption.style.cssText = 'font-size: var(--hx-text-xs); color: rgba(255, 181, 112, 0.88); text-align:center;'
+    app.hudTop.appendChild(app.waveCaption)
+
     app.victoryProgress = document.createElement('div')
     app.victoryProgress.style.cssText = `
       width: 100%;
@@ -352,6 +357,13 @@ export class GameHud {
     if (app.objectiveCaption && app.game.getObjectiveSummary) {
       const summary = app.game.getObjectiveSummary().slice(0, 2).join(' | ')
       app.objectiveCaption.textContent = summary ? `Objectives: ${summary}` : ''
+    }
+    if (app.waveCaption && app.game.getUpcomingWavePreview) {
+      const nextWave = app.game.getUpcomingWavePreview()
+      app.waveCaption.textContent = nextWave ? `Next Raid T${nextWave.turn}: ${nextWave.plan.name}` : ''
+      if (app.nextTurnBtn && nextWave?.summary) {
+        app.nextTurnBtn.title = nextWave.summary
+      }
     }
     if (app.nextTurnBtn) {
       const unacted = app.game.countUnactedPlayerUnits?.() || 0

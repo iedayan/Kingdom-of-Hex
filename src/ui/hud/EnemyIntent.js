@@ -7,6 +7,7 @@ import { MeshBasicMaterial } from 'three/webgpu'
 import { LineBasicMaterial } from 'three/webgpu'
 import { DoubleSide } from 'three/webgpu'
 import { EventBus } from '../../core/events/EventBus.js'
+import { getAttackDamage } from '../../gameplay/map-rules/biomeModifiers.js'
 
 export class EnemyIntentSystem {
   constructor(app) {
@@ -83,32 +84,38 @@ export class EnemyIntentSystem {
   }
 
   _calculateIntent(session, cKey, obj, towerNeighborSet) {
+    const ai = session._enemyAISystem
     const neighbors = session.getNeighbors(cKey)
-    const adjacentTargets = neighbors.filter(n => {
+    const attackRange = Math.max(1, obj?.range || 1)
+    const adjacentTargets = ai?._getTargetsInRange?.(cKey, attackRange) ?? neighbors.filter(n => {
       const t = session.objects.get(n)
       return t && t.owner === 'player'
     })
 
     if (adjacentTargets.length > 0) {
-      const target = this._chooseTarget(session, adjacentTargets)
+      const target = ai?._chooseTarget?.(adjacentTargets, cKey, obj) ?? this._chooseTarget(session, adjacentTargets)
       const targetObj = session.objects.get(target)
+      const damage = getAttackDamage(session, this.app, cKey, obj, target, targetObj)
+      const lethal = damage >= (targetObj?.hp ?? Infinity)
       return {
         type: 'attack',
         target,
-        damage: obj.atk,
+        damage,
+        lethal,
         attacker: obj.type,
         targetType: targetObj?.type,
         targetName: this._getDisplayName(targetObj?.type),
-        icon: this._getAttackIcon(obj.type)
+        icon: this._getAttackIcon(obj.type),
       }
     }
 
-    const bestMove = this._chooseMove(session, cKey, obj, towerNeighborSet)
+    const bestMove = ai?._chooseMove?.(neighbors, towerNeighborSet, cKey, obj) ?? this._chooseMove(session, cKey, obj, towerNeighborSet)
     if (bestMove) {
       return {
         type: 'move',
         destination: bestMove,
-        icon: '→'
+        icon: obj.type === 'goblin_slinger' ? '↗' : '→',
+        attacker: obj.type,
       }
     }
 
@@ -181,7 +188,13 @@ export class EnemyIntentSystem {
   }
 
   _getAttackIcon(type) {
-    return '⚔️'
+    const icons = {
+      goblin: '⚔️',
+      goblin_raider: '🗡️',
+      goblin_brute: '🪓',
+      goblin_slinger: '🏹',
+    }
+    return icons[type] || '⚔️'
   }
 
   render() {
@@ -227,7 +240,7 @@ export class EnemyIntentSystem {
       if (intent.type === 'attack') {
         card.innerHTML = `
           <span style="font-size: 14px;">${intent.icon}</span>
-          <span style="color: #ef4444; font-weight: bold;">-${intent.damage}</span>
+          <span style="color: ${intent.lethal ? '#fca5a5' : '#ef4444'}; font-weight: bold;">-${intent.damage}${intent.lethal ? ' KO' : ''}</span>
           <span style="color: rgba(255,255,255,0.7);">→</span>
           <span style="color: #4ade80;">${intent.targetName}</span>
         `
@@ -236,7 +249,7 @@ export class EnemyIntentSystem {
       } else if (intent.type === 'move') {
         card.innerHTML = `
           <span style="font-size: 14px;">${intent.icon}</span>
-          <span style="color: rgba(255,255,255,0.5);">Moving</span>
+          <span style="color: rgba(255,255,255,0.5);">${this._getDisplayName(intent.attacker)} moving</span>
         `
         
         this._drawMoveVisual(cKey, intent.destination)

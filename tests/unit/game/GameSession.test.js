@@ -48,6 +48,13 @@ describe('GameSession', () => {
     it('has empty researched tech', () => {
       expect(session.researched.size).toBe(0)
     })
+
+    it('provides a readable upcoming wave preview', () => {
+      const preview = session.getUpcomingWavePreview()
+      expect(preview.turn).toBeGreaterThanOrEqual(8)
+      expect(preview.plan.units.length).toBeGreaterThan(0)
+      expect(preview.summary).toContain(preview.plan.name)
+    })
   })
 
   describe('canAfford', () => {

@@ -1,4 +1,4 @@
-import { random as seededRandom } from '../SeededRandom.js'
+import { createRng, hashSeed } from '../SeededRandom.js'
 
 export const RUN_MODIFIERS = [
   {
@@ -32,17 +32,106 @@ export const RUN_MODIFIERS = [
   },
 ]
 
-export function pickEnemyVariantForWave(turn) {
-  if (turn < 13) return 'goblin'
-  const roll = seededRandom()
-  if (turn >= 24) {
-    if (roll < 0.35) return 'goblin_brute'
-    if (roll < 0.7) return 'goblin_slinger'
-    return 'goblin_raider'
+export const ENEMY_WAVE_ARCHETYPES = [
+  {
+    id: 'skirmishers',
+    name: 'Skirmishers',
+    flavor: 'Light infantry probing the frontier.',
+    minTurn: 1,
+    maxTurn: 12,
+    weight: 1.4,
+    units: ['goblin', 'goblin'],
+  },
+  {
+    id: 'raiding-party',
+    name: 'Raiding Party',
+    flavor: 'Fast raiders testing soft structures.',
+    minTurn: 10,
+    maxTurn: 99,
+    weight: 1.2,
+    units: ['goblin_raider', 'goblin', 'goblin'],
+  },
+  {
+    id: 'hunter-volley',
+    name: 'Hunter Volley',
+    flavor: 'Slingers screen the approach.',
+    minTurn: 12,
+    maxTurn: 99,
+    weight: 1,
+    units: ['goblin_slinger', 'goblin', 'goblin_raider'],
+  },
+  {
+    id: 'brute-push',
+    name: 'Brute Push',
+    flavor: 'Heavy goblins smash through defenses.',
+    minTurn: 16,
+    maxTurn: 99,
+    weight: 1,
+    units: ['goblin_brute', 'goblin', 'goblin_raider'],
+  },
+  {
+    id: 'siege-pack',
+    name: 'Siege Pack',
+    flavor: 'Brutes and slingers press towers together.',
+    minTurn: 22,
+    maxTurn: 99,
+    weight: 0.9,
+    units: ['goblin_brute', 'goblin_slinger', 'goblin_raider', 'goblin'],
+  },
+]
+
+function pickWaveArchetype(turn, rng) {
+  const pool = ENEMY_WAVE_ARCHETYPES.filter(wave => turn >= wave.minTurn && turn <= wave.maxTurn)
+  const total = pool.reduce((sum, wave) => sum + wave.weight, 0)
+  let cursor = rng() * total
+
+  for (const wave of pool) {
+    cursor -= wave.weight
+    if (cursor <= 0) return wave
   }
-  if (roll < 0.25) return 'goblin_raider'
-  if (roll < 0.4) return 'goblin_slinger'
-  return 'goblin'
+
+  return pool[pool.length - 1] ?? ENEMY_WAVE_ARCHETYPES[0]
+}
+
+export function pickEnemyVariantForWave(turn) {
+  const plan = buildEnemyWavePlan(turn, { seed: turn })
+  return plan.units[0] ?? 'goblin'
+}
+
+export function buildEnemyWavePlan(turn, { harsherRaids = false, seed = 0 } = {}) {
+  if (turn < 1) {
+    return { id: 'none', name: 'None', flavor: '', units: [] }
+  }
+
+  const rng = createRng(hashSeed(seed, 'enemy-wave', turn, harsherRaids ? 1 : 0))
+  const archetype = pickWaveArchetype(turn, rng)
+  const units = [...archetype.units]
+
+  if (turn < 12) {
+    units.splice(1)
+  } else if (turn < 18) {
+    units.splice(2)
+  } else if (turn >= 28 && rng() < 0.45) {
+    units.push(rng() < 0.5 ? 'goblin_brute' : 'goblin_slinger')
+  }
+
+  if (harsherRaids && units.length < 5) {
+    const reinforcements = ['goblin_raider', 'goblin_slinger', 'goblin']
+    units.push(reinforcements[Math.floor(rng() * reinforcements.length)])
+  }
+
+  return {
+    id: archetype.id,
+    name: archetype.name,
+    flavor: archetype.flavor,
+    units,
+  }
+}
+
+export function describeEnemyWavePlan(plan) {
+  if (!plan || !plan.units || plan.units.length === 0) return 'No raid forecast'
+  const labels = plan.units.map((unit) => unit.replace('goblin_', '').replace('goblin', 'goblin').replace(/_/g, ' '))
+  return `${plan.name}: ${labels.join(', ')}`
 }
 
 export function defineOptionalObjectives() {
