@@ -549,11 +549,12 @@ export class GameSession {
     const nextWave = this.getUpcomingWavePreview()
     const turnsToWave = nextWave ? nextWave.turn - this.turn : null
     if (typeof turnsToWave === 'number' && turnsToWave <= 1) {
+      const raidLabel = nextWave?.plan?.encounter === 'boss' ? `Boss raid on turn ${nextWave.turn}` : `Raid on turn ${nextWave.turn}`
       const defenses = Array.from(this.objects.values()).filter((obj) =>
         obj.owner === 'player' && (obj.type === 'tower' || PLAYER_RANGED_UNIT_TYPES.includes(obj.type) || ['knight', 'sentinel'].includes(obj.type))
       ).length
       if (defenses === 0) warnings.push('Raid imminent and no frontline defense is ready')
-      else warnings.push(`Raid on turn ${nextWave.turn}`)
+      else warnings.push(raidLabel)
     }
 
     return warnings

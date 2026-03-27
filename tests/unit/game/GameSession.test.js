@@ -446,6 +446,13 @@ describe('GameSession', () => {
       expect(warnings.some((warning) => warning.includes('still ready'))).toBe(true)
       expect(warnings.some((warning) => warning.includes('Food'))).toBe(true)
     })
+
+    it('calls out boss raids explicitly in end-turn warnings', () => {
+      session.turn = 27
+      session.addObject('1,0,-1', { type: 'tower', owner: 'player', hp: 10 })
+      const warnings = session.getEndTurnWarnings()
+      expect(warnings.some((warning) => warning.includes('Boss raid'))).toBe(true)
+    })
   })
 
   describe('run branches', () => {

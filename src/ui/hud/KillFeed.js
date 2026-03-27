@@ -31,7 +31,7 @@ export class KillFeed {
   }
 
   addHit(data) {
-    const { damage, targetType, attackerType, remainingHp, lethal } = data
+    const { damage, targetType, attackerType, remainingHp, lethal, targetHpBefore, targetMaxHp, critical } = data
     const entry = document.createElement('div')
     entry.className = 'kill-feed-entry hit'
     entry.style.cssText = `
@@ -40,17 +40,18 @@ export class KillFeed {
       gap: 6px;
       padding: 4px 10px;
       background: rgba(15, 18, 24, 0.88);
-      border: 1px solid rgba(239, 68, 68, 0.28);
+      border: 1px solid ${critical ? 'rgba(251, 191, 36, 0.58)' : 'rgba(239, 68, 68, 0.28)'};
       border-radius: 6px;
       font-size: 11px;
-      color: #fca5a5;
+      color: ${critical ? '#fde68a' : '#fca5a5'};
       font-family: system-ui;
       box-shadow: 0 2px 10px rgba(0, 0, 0, 0.35);
       opacity: 0;
       transform: translateX(24px);
     `
-    const tail = lethal ? 'and falls' : `(${remainingHp} hp left)`
-    entry.innerHTML = `<span>${this.iconFor(attackerType)}</span><span>${this.capitalize(targetType)} takes ${damage} ${tail}</span>`
+    const tail = lethal ? 'and falls' : `(${remainingHp}/${targetMaxHp || targetHpBefore || remainingHp} hp left)`
+    const prefix = critical ? 'Critical' : this.capitalize(targetType)
+    entry.innerHTML = `<span>${this.iconFor(attackerType)}</span><span>${prefix} takes ${damage} ${tail}</span>`
     this.container.appendChild(entry)
     this.events.push(entry)
     gsap.to(entry, { opacity: 1, x: 0, duration: 0.18, ease: 'power2.out' })
@@ -59,7 +60,7 @@ export class KillFeed {
       gsap.to(entry, { opacity: 0, x: 24, duration: 0.25, onComplete: () => entry.remove() })
       const idx = this.events.indexOf(entry)
       if (idx > -1) this.events.splice(idx, 1)
-    }, 1400)
+    }, critical ? 2200 : 1400)
   }
 
   addKill(data) {
@@ -131,6 +132,9 @@ export class KillFeed {
       scout: '⚔️',
       archer: '🏹',
       knight: '🛡️',
+      outrider: '🐎',
+      sentinel: '🧱',
+      sageguard: '✨',
       goblin: '👺',
       goblin_raider: '🗡️',
       goblin_brute: '🪓',

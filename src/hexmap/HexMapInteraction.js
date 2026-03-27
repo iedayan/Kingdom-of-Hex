@@ -739,9 +739,13 @@ export class HexMapInteraction {
                     'player',
                     preview.lethal ? [hoveredKey] : []
                   ) || { attackers: 0, totalDamage: 0 }
-                  const riskNote = exposure.attackers > 0 ? ` · holds under ${exposure.attackers} threat` : ' · low retaliation pressure'
-                  const text = `Attack ${this._describeObject(hoveredObj)} for ${preview.damage} (${preview.distance}/${preview.range}${defenseNote})${preview.lethal ? ' KO' : `, ${preview.remainingHp} HP left`}${riskNote}`
-                  App.instance.gameHud?.setContextHint(text, preview.lethal ? 'success' : 'info')
+                  const hpNote = ` · target ${preview.targetHp}/${preview.targetMaxHp} HP`
+                  const outcomeNote = preview.lethal ? ' · lethal hit' : ` · leaves ${preview.remainingHp} HP`
+                  const riskNote = exposure.attackers > 0
+                    ? ` · return threat ${exposure.attackers} for ~${exposure.totalDamage}`
+                    : ' · low retaliation pressure'
+                  const text = `Attack ${this._describeObject(hoveredObj)} for ${preview.damage}${hpNote}${outcomeNote} (${preview.distance}/${preview.range}${defenseNote})${riskNote}`
+                  App.instance.gameHud?.setContextHint(text, preview.lethal ? 'success' : (exposure.attackers > 0 ? 'error' : 'info'))
                 } else if (preview?.reason) {
                   App.instance.gameHud?.setContextHint(preview.reason, 'error')
                 }

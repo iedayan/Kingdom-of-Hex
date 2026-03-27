@@ -188,6 +188,9 @@ export class EnemyIntentSystem {
       scout: 'Scout',
       archer: 'Archer',
       knight: 'Knight',
+      outrider: 'Outrider',
+      sentinel: 'Sentinel',
+      sageguard: 'Sageguard',
       lumberjack: 'Lumberjack',
       farm: 'Farm',
       mine: 'Mine',
@@ -250,18 +253,21 @@ export class EnemyIntentSystem {
       `
 
       if (intent.type === 'attack') {
+        const border = intent.lethal ? 'rgba(248,113,113,0.78)' : (intent.attacker === 'goblin_warlord' ? 'rgba(251,191,36,0.7)' : 'rgba(239, 68, 68, 0.3)')
+        card.style.borderColor = border
         card.innerHTML = `
           <span style="font-size: 14px;">${intent.icon}</span>
           <span style="color: ${intent.lethal ? '#fca5a5' : '#ef4444'}; font-weight: bold;">-${intent.damage}${intent.lethal ? ' KO' : ''}</span>
           <span style="color: rgba(255,255,255,0.7);">→</span>
           <span style="color: #4ade80;">${intent.targetName}</span>
+          ${intent.attacker === 'goblin_warlord' ? '<span style="margin-left:auto;color:#fbbf24;font-size:10px;font-weight:700;">BOSS</span>' : ''}
         `
         
         this._drawAttackVisual(cKey, intent.target)
       } else if (intent.type === 'move') {
         card.innerHTML = `
           <span style="font-size: 14px;">${intent.icon}</span>
-          <span style="color: rgba(255,255,255,0.5);">${this._getDisplayName(intent.attacker)} moving</span>
+          <span style="color: rgba(255,255,255,0.5);">${this._getDisplayName(intent.attacker)} advancing</span>
         `
         
         this._drawMoveVisual(cKey, intent.destination)
@@ -286,7 +292,7 @@ export class EnemyIntentSystem {
     const toPos = this.app.unitManager.getWorldPosition(to[0], to[1], to[2], 1)
     
     const scene = this.app.scene
-    const material = new LineBasicMaterial({ color: 0xef4444, transparent: true, opacity: 0.6 })
+    const material = new LineBasicMaterial({ color: 0xef4444, transparent: true, opacity: 0.72 })
     const geometry = new BufferGeometry().setFromPoints([
       new Vector3(fromPos.x, fromPos.y + 0.5, fromPos.z),
       new Vector3(toPos.x, toPos.y + 0.5, toPos.z)

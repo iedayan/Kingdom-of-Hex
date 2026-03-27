@@ -101,6 +101,10 @@ export class CombatSystem {
       reason: '',
       attacker,
       target,
+      attackerHp: attacker.hp ?? 0,
+      attackerMaxHp: attacker.maxHp ?? attacker.hp ?? 0,
+      targetHp: target.hp ?? 0,
+      targetMaxHp: target.maxHp ?? target.hp ?? 0,
       damage,
       distance,
       range,
@@ -138,8 +142,11 @@ export class CombatSystem {
       targetType: target?.type,
       targetOwner: target?.owner,
       attackerType: attacker?.type,
+      targetHpBefore: (target?.hp ?? 0) + damage,
+      targetMaxHp: target?.maxHp ?? target?.hp ?? 0,
       remainingHp: Math.max(0, target?.hp ?? 0),
       lethal: (target?.hp ?? 0) <= 0,
+      critical: target?.type === 'tower' || target?.type === 'goblin_warlord' || attacker?.type === 'goblin_warlord',
     })
     const pos = this.app.unitManager.getWorldPosition(HexUtils.parse(targetKey), target.level || 0)
     this.app.spawnFloatingText(`-${damage} HP`, pos, 'var(--hx-danger)')

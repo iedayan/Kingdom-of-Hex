@@ -1,5 +1,5 @@
 import { createRng, hashSeed } from '../SeededRandom.js'
-import { PLAYER_RANGED_UNIT_TYPES } from './constants.js'
+import { ENEMY, PLAYER_RANGED_UNIT_TYPES } from './constants.js'
 
 export const RUN_MODIFIERS = [
   {
@@ -215,7 +215,10 @@ export function getRosterForIdentity(identityId = null) {
 
 export function pickEnemyFaction(turn, { seed = 0, identityId = null } = {}) {
   const preferred = RUN_MODIFIERS.find((modifier) => modifier.id === identityId)?.enemyFactionBias
-  if ((turn === 30 || turn >= 40) && turn % 10 === 0) {
+  const firstWaveTurn = Math.max(6, ENEMY.FIRST_WAVE_TURN - 1)
+  const bossTurn = firstWaveTurn + ENEMY.WAVE_PERIOD * 4
+  const siegeTurn = bossTurn + 10
+  if (turn === bossTurn || (turn >= siegeTurn && (turn - siegeTurn) % 10 === 0)) {
     return ENEMY_FACTIONS.find((faction) => faction.id === 'blackiron_legion')
   }
 
@@ -256,11 +259,15 @@ export function buildEnemyWavePlan(turn, { harsherRaids = false, seed = 0, ident
   }
 
   const enemyFaction = pickEnemyFaction(turn, { seed, identityId })
-  if (turn === 30) {
+  const firstWaveTurn = harsherRaids ? Math.max(6, ENEMY.FIRST_WAVE_TURN - 1) : ENEMY.FIRST_WAVE_TURN
+  const bossTurn = firstWaveTurn + ENEMY.WAVE_PERIOD * 4
+  const siegeTurn = bossTurn + 10
+
+  if (turn === bossTurn) {
     const encounter = ENEMY_WAVE_ARCHETYPES.find((wave) => wave.id === 'warlord-host')
     return { ...encounter, units: [...encounter.units], encounter: 'boss', enemyFactionId: enemyFaction.id, enemyFactionName: enemyFaction.name }
   }
-  if (turn >= 40 && (turn - 40) % 10 === 0) {
+  if (turn >= siegeTurn && (turn - siegeTurn) % 10 === 0) {
     const encounter = ENEMY_WAVE_ARCHETYPES.find((wave) => wave.id === 'crownbreaker-siege')
     return { ...encounter, units: [...encounter.units], encounter: 'boss', enemyFactionId: enemyFaction.id, enemyFactionName: enemyFaction.name }
   }

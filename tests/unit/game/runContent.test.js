@@ -37,11 +37,13 @@ describe('runContent wave planning', () => {
   })
 
   it('forces boss encounters on key late-wave turns', () => {
-    const turn30 = buildEnemyWavePlan(30, { seed: 12345, harsherRaids: false })
-    const turn40 = buildEnemyWavePlan(40, { seed: 12345, harsherRaids: false })
-    expect(turn30.encounter).toBe('boss')
-    expect(turn30.boss).toBe('goblin_warlord')
-    expect(turn40.id).toBe('crownbreaker-siege')
+    const turn28 = buildEnemyWavePlan(28, { seed: 12345, harsherRaids: false })
+    const turn38 = buildEnemyWavePlan(38, { seed: 12345, harsherRaids: false })
+    const harshTurn27 = buildEnemyWavePlan(27, { seed: 12345, harsherRaids: true })
+    expect(turn28.encounter).toBe('boss')
+    expect(turn28.boss).toBe('goblin_warlord')
+    expect(turn38.id).toBe('crownbreaker-siege')
+    expect(harshTurn27.encounter).toBe('boss')
   })
 
   it('returns faction-specific recruit rosters', () => {
