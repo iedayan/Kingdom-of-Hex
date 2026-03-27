@@ -82,6 +82,13 @@ describe('EnemyAISystem', () => {
   })
 
   describe('_chooseTarget', () => {
+    it('prioritizes lethal targets over tougher structures', () => {
+      session.addObject('1,0,-1', { type: 'tower', owner: 'player', hp: 28, maxHp: 28 })
+      session.addObject('0,1,-1', { type: 'scout', owner: 'player', hp: 2, maxHp: 10 })
+      const target = ai._chooseTarget(['1,0,-1', '0,1,-1'], '0,0,0', { type: 'goblin', atk: 3 })
+      expect(target).toBe('0,1,-1')
+    })
+
     it('prioritizes towers over other targets', () => {
       session.addObject('1,0,-1', { type: 'tower', owner: 'player', hp: 50 })
       session.addObject('0,1,-1', { type: 'scout', owner: 'player', hp: 10 })
@@ -131,6 +138,15 @@ describe('EnemyAISystem', () => {
       const neighbors = session.getNeighbors('2,0,-2')
       const move = ai._chooseMove(neighbors, new Set())
       expect(move).toBeDefined()
+    })
+
+    it('chooses moves deterministically for the same board state', () => {
+      session.spawnUnit('2,0,-2', 'goblin_raider', 'enemy')
+      session.addObject('1,0,-1', { type: 'farm', owner: 'player', hp: 10 })
+      const neighbors = session.getNeighbors('2,0,-2')
+      const first = ai._chooseMove(neighbors, new Set(), '2,0,-2', { type: 'goblin_raider', range: 1 })
+      const second = ai._chooseMove(neighbors, new Set(), '2,0,-2', { type: 'goblin_raider', range: 1 })
+      expect(second).toBe(first)
     })
   })
 

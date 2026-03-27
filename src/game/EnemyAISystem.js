@@ -1,6 +1,8 @@
 import { HexUtils } from './HexUtils.js'
 import { CAPITAL_CUBE_KEY } from './goals.js'
 import { log } from '../core/logging/gameConsole.js'
+import { getAttackDamage } from '../gameplay/map-rules/biomeModifiers.js'
+import { COMBAT } from './constants.js'
 
 export class EnemyAISystem {
   constructor(session, app, combatSystem) {
@@ -53,14 +55,14 @@ export class EnemyAISystem {
     const adjacentTargets = this._getTargetsInRange(cKey, attackRange)
 
     if (adjacentTargets.length > 0) {
-      const target = this._chooseTarget(adjacentTargets)
+      const target = this._chooseTarget(adjacentTargets, cKey, obj)
       await this.combatSystem.attack(cKey, target)
       await this._delay(800)
       if (this._checkCapitalOverrun()) return
       return
     }
 
-    const bestMove = this._chooseMove(neighbors, towerNeighborSet)
+    const bestMove = this._chooseMove(neighbors, towerNeighborSet, cKey, obj)
     if (bestMove) {
       this.session.moveUnit(cKey, bestMove)
       await this._delay(500)
@@ -91,14 +93,20 @@ export class EnemyAISystem {
     })
   }
 
-  _chooseTarget(targets) {
+  _chooseTarget(targets, attackerKey = null, attacker = null) {
     return targets.slice().sort((a, b) => {
       const A = this.session.objects.get(a)
       const B = this.session.objects.get(b)
-      
-      const towerA = A?.type === 'tower' ? 1 : 0
-      const towerB = B?.type === 'tower' ? 1 : 0
-      if (towerA !== towerB) return towerB - towerA
+
+      const damageA = attacker ? getAttackDamage(this.session, this.app, attackerKey, attacker, a, A) : 0
+      const damageB = attacker ? getAttackDamage(this.session, this.app, attackerKey, attacker, b, B) : 0
+      const lethalA = damageA >= (A?.hp ?? Infinity) ? 1 : 0
+      const lethalB = damageB >= (B?.hp ?? Infinity) ? 1 : 0
+      if (lethalA !== lethalB) return lethalB - lethalA
+
+      const threatA = COMBAT.TARGET_PRIORITIES?.[A?.type] ?? 0
+      const threatB = COMBAT.TARGET_PRIORITIES?.[B?.type] ?? 0
+      if (threatA !== threatB) return threatB - threatA
 
       const distA = HexUtils.distance(a, CAPITAL_CUBE_KEY)
       const distB = HexUtils.distance(b, CAPITAL_CUBE_KEY)
@@ -106,11 +114,13 @@ export class EnemyAISystem {
 
       const hpA = A?.hp ?? 9999
       const hpB = B?.hp ?? 9999
-      return hpA - hpB
+      if (hpA !== hpB) return hpA - hpB
+
+      return a.localeCompare(b)
     })[0]
   }
 
-  _chooseMove(neighbors, towerNeighborSet) {
+  _chooseMove(neighbors, towerNeighborSet, fromKey = null, enemy = null) {
     const candidates = neighbors.filter(n => !this.session.objects.has(n))
     if (candidates.length === 0) return null
 
@@ -121,14 +131,44 @@ export class EnemyAISystem {
       const dist = HexUtils.distance(toKey, CAPITAL_CUBE_KEY)
       const towerThreat = towerNeighborSet.has(toKey) ? 1 : 0
       const adjacentPlayerCount = this._countAdjacentPlayer(toKey)
+      const adjacentStructureCount = this._countAdjacentPlayerStructures(toKey)
+      const rangedTargets = this._getTargetsInRange(toKey, Math.max(1, enemy?.range || 1)).length
 
-      const score = dist * 10 + towerThreat * 6 - adjacentPlayerCount * 0.5 + Math.random() * 0.05
-      if (score < bestScore) {
+      const profile = this._getMovementProfile(enemy)
+      const score =
+        dist * profile.distanceWeight +
+        towerThreat * profile.towerWeight -
+        adjacentPlayerCount * profile.adjacentPlayerWeight -
+        adjacentStructureCount * profile.adjacentStructureWeight -
+        rangedTargets * profile.rangedPressureWeight
+
+      if (score < bestScore || (score === bestScore && toKey.localeCompare(best ?? toKey) < 0)) {
         bestScore = score
         best = toKey
       }
     }
     return best
+  }
+
+  _countAdjacentPlayerStructures(cKey) {
+    return this.session.getNeighbors(cKey).reduce((acc, nb) => {
+      const t = this.session.objects.get(nb)
+      const isStructure = t && t.owner === 'player' && !['scout', 'archer', 'knight'].includes(t.type)
+      return acc + (isStructure ? 1 : 0)
+    }, 0)
+  }
+
+  _getMovementProfile(enemy) {
+    switch (enemy?.type) {
+      case 'goblin_raider':
+        return { distanceWeight: 12, towerWeight: 8, adjacentPlayerWeight: 1.5, adjacentStructureWeight: 3, rangedPressureWeight: 0.5 }
+      case 'goblin_brute':
+        return { distanceWeight: 9, towerWeight: 3, adjacentPlayerWeight: 1, adjacentStructureWeight: 4, rangedPressureWeight: 0.25 }
+      case 'goblin_slinger':
+        return { distanceWeight: 8, towerWeight: 7, adjacentPlayerWeight: -2, adjacentStructureWeight: 0.5, rangedPressureWeight: 3 }
+      default:
+        return { distanceWeight: 10, towerWeight: 6, adjacentPlayerWeight: 0.5, adjacentStructureWeight: 1.5, rangedPressureWeight: 1 }
+    }
   }
 
   _countAdjacentPlayer(cKey) {

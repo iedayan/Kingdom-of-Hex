@@ -3,6 +3,7 @@ import { getAttackDamage } from '../gameplay/map-rules/biomeModifiers.js'
 import { Sounds } from '../core/audio/Sounds.js'
 import { log } from '../core/logging/gameConsole.js'
 import { EventBus } from '../core/events/EventBus.js'
+import { COMBAT } from './constants.js'
 
 export class CombatSystem {
   constructor(session, app) {
@@ -27,7 +28,7 @@ export class CombatSystem {
     EventBus.emit('screenShake', { intensity: 0.3, duration: 150 })
     await this._fireProjectile(attackerKey, targetKey, attacker)
 
-    const damage = getAttackDamage(this.session, this.app, attackerKey, attacker)
+    const damage = getAttackDamage(this.session, this.app, attackerKey, attacker, targetKey, target)
     target.hp -= damage
 
     this._showDamageEffect(targetKey, target, damage)
@@ -37,7 +38,7 @@ export class CombatSystem {
       EventBus.emit('screenShake', { intensity: 0.6, duration: 250 })
       await this._handleKill(attacker, targetKey, target)
     } else if (attacker.xp !== undefined) {
-      attacker.xp += 2
+      attacker.xp += COMBAT.XP_ON_ATTACK
       this.session.checkLevelUp(attackerKey, attacker)
     }
 
@@ -85,14 +86,14 @@ export class CombatSystem {
     })
     
     if (attacker.xp !== undefined) {
-      attacker.xp += 5
-      this.session.checkLevelUp(targetKey, attacker)
+      attacker.xp += COMBAT.XP_ON_KILL
+      this.session.checkLevelUp(attacker.cKey ?? targetKey, attacker)
     }
 
     if (target.owner === 'enemy') {
       this.session.recordEnemyKill?.(target.type)
       this.session.removeUnit(targetKey)
-      const bounty = this._calculateBounty(targetKey)
+      const bounty = this._calculateBounty(target)
       this.session.resources.gold += bounty
       this._showBountyEffect(targetKey, bounty)
       EventBus.emit('combatBounty', { amount: bounty })
@@ -105,9 +106,8 @@ export class CombatSystem {
     }
   }
 
-  _calculateBounty(targetKey) {
-    const biome = this.app.city?.grids?.get(0)?.globalCenterCube ? 'temperate' : 'temperate'
-    return biome === 'wasteland' ? 40 : 20
+  _calculateBounty(target) {
+    return COMBAT.BOUNTY_BY_TYPE?.[target?.type] ?? 20
   }
 
   _showBountyEffect(targetKey, bounty) {

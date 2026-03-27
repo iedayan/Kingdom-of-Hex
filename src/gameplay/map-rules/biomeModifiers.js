@@ -1,4 +1,5 @@
 import { getBiomeForCube } from './gridAccess.js'
+import { COMBAT } from '../../game/constants.js'
 
 /** Per-bioma yield multipliers for economic buildings (grid-level climate). */
 const YIELD = {
@@ -18,18 +19,47 @@ export function scaleYield(amount, mult) {
 
 const BASE_TOWER_DAMAGE = 4
 
+function getTileLevel(app, cKey, obj) {
+  if (!cKey) return obj?.level ?? 0
+  return app?.city?.globalCells?.get(cKey)?.level ?? obj?.level ?? 0
+}
+
+function getMatchupBonus(attackerType, targetType) {
+  if (!attackerType || !targetType) return 0
+  return COMBAT.ATTACK_BONUSES?.[attackerType]?.[targetType] ?? 0
+}
+
 /**
  * @param {import('../../game/GameSession.js').GameSession} session
  * @param {object} app
  * @param {string} attackerKey
  * @param {object} attacker - game object
  */
-export function getAttackDamage(session, app, attackerKey, attacker) {
+export function getAttackDamage(session, app, attackerKey, attacker, targetKey = null, target = null) {
   if (!attacker) return 0
-  if (typeof attacker.atk === 'number') return attacker.atk
+  let damage = 0
+
+  if (typeof attacker.atk === 'number') {
+    damage = attacker.atk
+  }
   if (attacker.type === 'tower') {
     const biome = getBiomeForCube(session, app, attackerKey)
-    return BASE_TOWER_DAMAGE + (biome === 'wasteland' ? 1 : 0)
+    damage = BASE_TOWER_DAMAGE + (biome === 'wasteland' ? 1 : 0)
   }
-  return 0
+
+  damage += getMatchupBonus(attacker.type, target?.type)
+
+  const attackerLevel = getTileLevel(app, attackerKey, attacker)
+  const targetLevel = getTileLevel(app, targetKey, target)
+  if (attackerLevel > targetLevel) {
+    damage += COMBAT.HIGH_GROUND_BONUS
+  } else if (targetLevel > attackerLevel) {
+    damage -= COMBAT.HIGH_GROUND_BONUS
+  }
+
+  if (target?.type === 'tower' && attacker?.type !== 'goblin_brute') {
+    damage -= COMBAT.FORTIFIED_TARGET_REDUCTION
+  }
+
+  return Math.max(1, Math.round(damage))
 }

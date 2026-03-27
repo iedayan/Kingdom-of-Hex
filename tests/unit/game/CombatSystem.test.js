@@ -150,6 +150,14 @@ describe('CombatSystem', () => {
       await combat.attack('0,0,0', '1,0,-1')
       expect(session.resources.gold).toBeGreaterThan(0)
     })
+
+    it('scales bounty by enemy type', async () => {
+      session.resources.gold = 0
+      session.spawnUnit('0,0,0', 'knight', 'player')
+      session.addObject('1,0,-1', { type: 'goblin_brute', owner: 'enemy', hp: 1, maxHp: 10 })
+      await combat.attack('0,0,0', '1,0,-1')
+      expect(session.resources.gold).toBe(32)
+    })
   })
 
   describe('tower attacks', () => {

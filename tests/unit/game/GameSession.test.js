@@ -223,7 +223,7 @@ describe('GameSession', () => {
     it('awards bounty for goblin kill', async () => {
       session.resources.gold = 0
       await session.attack('0,0,0', '1,0,-1')
-      expect(session.resources.gold).toBe(20)
+      expect(session.resources.gold).toBe(18)
     })
 
     it('prevents attack with no mp', async () => {
