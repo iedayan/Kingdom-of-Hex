@@ -57,11 +57,11 @@ export function initPalaceUI(app, deps) {
           <button type="button" id="palace-copy-seed" class="hx-btn hx-btn--ghost hx-focusable">COPY SEED</button>
         </div>
         <div class="hx-panel hx-panel--glass hx-corner-ticks" style="margin-top: var(--hx-space-3); padding: var(--hx-space-4); text-align:left;">
-          <h3 class="hx-font-ui" style="margin:0 0 var(--hx-space-2); color: var(--hx-accent-info); font-size: var(--hx-text-sm);">RUN MODIFIER (PICK 1)</h3>
+          <h3 class="hx-font-ui" style="margin:0 0 var(--hx-space-2); color: var(--hx-accent-info); font-size: var(--hx-text-sm);">KINGDOM IDENTITY (PICK 1)</h3>
           <div style="display:flex; flex-direction:column; gap: var(--hx-space-2);">
             ${RUN_MODIFIERS.map((m) => `
               <button type="button" class="hx-btn hx-focusable run-mod-btn" data-mod-id="${m.id}" style="text-align:left;">
-                <b>${m.name}</b><br><span style="opacity:.8; font-size: var(--hx-text-xs);">${m.desc}</span>
+                <b>${m.name}</b><br><span style="opacity:.9; font-size: var(--hx-text-xs);">${m.desc}</span><br><span style="opacity:.65; font-size: 11px;">${m.flavor || ''}</span>
               </button>
             `).join('')}
           </div>

@@ -2,32 +2,38 @@ import { createRng, hashSeed } from '../SeededRandom.js'
 
 export const RUN_MODIFIERS = [
   {
-    id: 'agrarian_compromise',
-    name: 'Agrarian Compromise',
-    desc: 'Farms yield more gold, but your military starts weaker.',
+    id: 'guild_compact',
+    name: 'Guild Compact',
+    desc: 'A mercantile realm with stronger farms and richer early coffers.',
+    flavor: 'Trade first, then buy your way through the crisis.',
     apply(session) {
+      session.resources.gold += 60
       session.runRules.farmGoldBonus = 2
-      session.runRules.playerCombatMultiplier = 0.85
+      session.runRules.marketGoldBonus = 4
     },
   },
   {
-    id: 'war_chest',
-    name: 'War Chest',
-    desc: 'Start with more resources, but raids are harsher.',
+    id: 'frontier_march',
+    name: 'Frontier March',
+    desc: 'A fortified border realm with stronger defenses and harsher pressure.',
+    flavor: 'Stone, towers, and hard borders define the campaign.',
     apply(session) {
-      session.resources.gold += 80
+      session.resources.gold += 30
       session.resources.wood += 40
-      session.resources.stone += 20
+      session.resources.stone += 40
       session.runRules.harsherRaids = true
+      session.techTree.ballistics.progress += 20
     },
   },
   {
-    id: 'scholar_levy',
-    name: 'Scholar Levy',
-    desc: 'Faster research, but food production is lower.',
+    id: 'scholar_court',
+    name: 'Scholar Court',
+    desc: 'A learned kingdom that reaches late-game tools faster, but runs leaner.',
+    flavor: 'Knowledge accelerates, but every field matters.',
     apply(session) {
-      session.runRules.sciencePerTurnBonus = 2
+      session.runRules.sciencePerTurnBonus = 3
       session.runRules.foodYieldMultiplier = 0.85
+      session.techTree.scholarship.progress += 10
     },
   },
 ]
@@ -86,6 +92,67 @@ export const ENEMY_WAVE_ARCHETYPES = [
     maxTurn: 99,
     weight: 0.75,
     units: ['goblin_warlord', 'goblin_brute', 'goblin_slinger', 'goblin_raider'],
+    boss: 'goblin_warlord',
+  },
+  {
+    id: 'crownbreaker-siege',
+    name: 'Crownbreaker Siege',
+    flavor: 'The warlord returns with a tower-breaking host.',
+    minTurn: 40,
+    maxTurn: 99,
+    weight: 0.55,
+    units: ['goblin_warlord', 'goblin_brute', 'goblin_brute', 'goblin_slinger', 'goblin_raider'],
+    boss: 'goblin_warlord',
+  },
+]
+
+export const DECREES = [
+  {
+    id: 'granary_edict',
+    name: 'Granary Edict',
+    desc: '+25 Food now. Farms yield more food for the rest of the run.',
+    apply(session) {
+      session.resources.food += 25
+      session.runRules.foodYieldMultiplier = (session.runRules.foodYieldMultiplier || 1) + 0.15
+    },
+  },
+  {
+    id: 'merchant_guilds',
+    name: 'Merchant Guilds',
+    desc: '+40 Gold now. Markets gain +5 Gold per conversion.',
+    apply(session) {
+      session.resources.gold += 40
+      session.runRules.marketGoldBonus = (session.runRules.marketGoldBonus || 0) + 5
+    },
+  },
+  {
+    id: 'watcher_beacons',
+    name: 'Watcher Beacons',
+    desc: '+35 Stone and a wider revealed frontier.',
+    apply(session) {
+      session.resources.stone += 35
+      session.claimRadius('0,0,0', 4)
+      session.revealRadius('0,0,0', 4)
+    },
+  },
+  {
+    id: 'scholastic_grant',
+    name: 'Scholastic Grant',
+    desc: '+30 Science now. +2 Science each turn.',
+    apply(session) {
+      session.resources.science += 30
+      session.runRules.sciencePerTurnBonus = (session.runRules.sciencePerTurnBonus || 0) + 2
+    },
+  },
+  {
+    id: 'martial_code',
+    name: 'Martial Code',
+    desc: '+20 Stone. Player units deal more damage for the rest of the run.',
+    apply(session) {
+      session.resources.stone += 20
+      session.runRules.playerCombatMultiplier = (session.runRules.playerCombatMultiplier || 1) + 0.1
+      session.refreshPlayerCombatBonuses?.()
+    },
   },
 ]
 
@@ -112,6 +179,15 @@ export function buildEnemyWavePlan(turn, { harsherRaids = false, seed = 0 } = {}
     return { id: 'none', name: 'None', flavor: '', units: [] }
   }
 
+  if (turn === 30) {
+    const encounter = ENEMY_WAVE_ARCHETYPES.find((wave) => wave.id === 'warlord-host')
+    return { ...encounter, units: [...encounter.units], encounter: 'boss' }
+  }
+  if (turn >= 40 && (turn - 40) % 10 === 0) {
+    const encounter = ENEMY_WAVE_ARCHETYPES.find((wave) => wave.id === 'crownbreaker-siege')
+    return { ...encounter, units: [...encounter.units], encounter: 'boss' }
+  }
+
   const rng = createRng(hashSeed(seed, 'enemy-wave', turn, harsherRaids ? 1 : 0))
   const archetype = pickWaveArchetype(turn, rng)
   const units = [...archetype.units]
@@ -134,13 +210,46 @@ export function buildEnemyWavePlan(turn, { harsherRaids = false, seed = 0 } = {}
     name: archetype.name,
     flavor: archetype.flavor,
     units,
+    boss: archetype.boss || null,
+    encounter: archetype.boss ? 'boss' : 'raid',
   }
 }
 
 export function describeEnemyWavePlan(plan) {
   if (!plan || !plan.units || plan.units.length === 0) return 'No raid forecast'
   const labels = plan.units.map((unit) => unit.replace('goblin_', '').replace('goblin', 'goblin').replace(/_/g, ' '))
-  return `${plan.name}: ${labels.join(', ')}`
+  const prefix = plan.boss ? 'Boss Raid' : plan.name
+  return `${prefix}: ${labels.join(', ')}`
+}
+
+export function pickDecreeChoices(turn, seed = 0, count = 3) {
+  const rng = createRng(hashSeed(seed, 'decrees', turn))
+  const pool = [...DECREES]
+  const picked = []
+  while (pool.length > 0 && picked.length < count) {
+    const idx = Math.floor(rng() * pool.length)
+    picked.push(pool.splice(idx, 1)[0])
+  }
+  return picked
+}
+
+export function buildDecreeEvent(turn, seed = 0) {
+  const options = pickDecreeChoices(turn, seed).map((decree) => ({
+    decreeId: decree.id,
+    label: decree.name,
+    desc: decree.desc,
+    act: (session) => decree.apply(session),
+  }))
+
+  return {
+    id: `decree-${turn}`,
+    title: turn <= 12 ? 'Royal Decree' : 'High Council Edict',
+    text: turn <= 12
+      ? 'The court demands a defining policy. Choose the law that will shape the rest of the campaign.'
+      : 'The late court convenes. One lasting decree can still reshape the war.'
+      ,
+    options,
+  }
 }
 
 export function defineOptionalObjectives() {

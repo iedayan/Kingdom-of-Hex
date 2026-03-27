@@ -3,6 +3,7 @@ import { Sounds } from '../../core/audio/Sounds.js'
 import { refreshLucideIcons } from '../../core/ui/icons.js'
 import { MAX_TURNS, capitalMissionLines, CAPITAL_SEAT_NAME } from '../../game/goals.js'
 import { BUILDINGS, UNITS, formatCost } from '../../game/GameData.js'
+import { RUN_MODIFIERS } from '../../game/runContent.js'
 import gsap from 'gsap'
 
 /**
@@ -154,6 +155,11 @@ export class GameHud {
     app.waveCaption.className = 'hx-font-ui'
     app.waveCaption.style.cssText = 'font-size: var(--hx-text-xs); color: rgba(255, 181, 112, 0.88); text-align:center;'
     app.hudTop.appendChild(app.waveCaption)
+
+    app.kingdomCaption = document.createElement('div')
+    app.kingdomCaption.className = 'hx-font-ui'
+    app.kingdomCaption.style.cssText = 'font-size: var(--hx-text-xs); color: rgba(125, 211, 252, 0.88); text-align:center;'
+    app.hudTop.appendChild(app.kingdomCaption)
 
     app.turnReport = document.createElement('div')
     app.turnReport.className = 'hx-turn-report'
@@ -390,10 +396,17 @@ export class GameHud {
     }
     if (app.waveCaption && app.game.getUpcomingWavePreview) {
       const nextWave = app.game.getUpcomingWavePreview()
-      app.waveCaption.textContent = nextWave ? `Next Raid T${nextWave.turn}: ${nextWave.plan.name}` : ''
+      app.waveCaption.textContent = nextWave ? `${nextWave.plan.encounter === 'boss' ? 'Boss' : 'Next'} Raid T${nextWave.turn}: ${nextWave.plan.name}` : ''
       if (app.nextTurnBtn && nextWave?.summary) {
         app.nextTurnBtn.title = nextWave.summary
       }
+    }
+    if (app.kingdomCaption) {
+      const identity = RUN_MODIFIERS.find((modifier) => modifier.id === app.game.runModifier)
+      const decrees = app.game.chosenDecrees?.length || 0
+      const tracks = app.game.getVictoryTracks?.() || []
+      const trackText = tracks.map((track) => `${track.label} ${Math.round(track.percent)}%`).join(' · ')
+      app.kingdomCaption.textContent = `${identity ? identity.name : 'Unsworn Realm'}${decrees > 0 ? ` · ${decrees} decrees` : ''}${trackText ? ` · ${trackText}` : ''}`
     }
     if (app.turnReport && app.game.getLastTurnReport) {
       const report = app.game.getLastTurnReport()
@@ -468,11 +481,16 @@ export class GameHud {
     // Update victory progress bar
     if (app.victoryProgress) {
       const progressBar = app.victoryProgress.querySelector('.hx-victory-bar')
-      const GOLD_GOAL = 1000
-      const percent = Math.min(100, (r.gold / GOLD_GOAL) * 100)
+      const tracks = app.game.getVictoryTracks?.() || [{ id: 'treasury', percent: 0 }]
+      const bestTrack = tracks.slice().sort((a, b) => b.percent - a.percent)[0]
+      const percent = Math.min(100, bestTrack?.percent || 0)
       if (progressBar) {
         progressBar.style.width = `${percent}%`
-        if (percent >= 100) {
+        if (bestTrack?.id === 'knowledge') {
+          progressBar.style.background = 'linear-gradient(90deg, #38bdf8, #22d3ee)'
+        } else if (bestTrack?.id === 'fortress') {
+          progressBar.style.background = 'linear-gradient(90deg, #f97316, #fb923c)'
+        } else if (percent >= 100) {
           progressBar.style.background = 'linear-gradient(90deg, #4ade80, #22c55e)'
         } else if (percent >= 75) {
           progressBar.style.background = 'linear-gradient(90deg, #fbbf24, #f59e0b)'

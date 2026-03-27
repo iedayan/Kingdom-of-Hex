@@ -3,6 +3,7 @@ import { Sounds } from '../../core/audio/Sounds.js'
 
 export function createEndGameScreen(app, isWin) {
   const stats = saveManager.getStats()
+  const victoryReason = app.game?.victoryReason || 'treasury'
   const lpGain = isWin 
     ? Math.floor((app.game?.resources?.gold || 0) / 10) + (app.game?.resources?.science || 0)
     : Math.floor(((app.game?.resources?.gold || 0) / 20) + ((app.game?.resources?.science || 0) / 2))
@@ -51,7 +52,11 @@ export function createEndGameScreen(app, isWin) {
       
       <p style="color:#ccc; margin:0 0 1.5rem; font-size:1rem;">
         ${isWin 
-          ? 'Your kingdom prospers! The Eternal Palace stands strong.' 
+          ? victoryReason === 'knowledge'
+            ? 'Your scholars have secured a learned victory for the realm.'
+            : victoryReason === 'fortress'
+              ? 'Your bastions held. The frontier became an iron wall.'
+              : 'Your kingdom prospers! The Eternal Palace stands strong.'
           : app.game?.loseReason === 'capital' 
             ? 'The Eternal Palace has fallen...' 
             : 'Time ran out before you could reach 1000 gold.'}
@@ -73,6 +78,8 @@ export function createEndGameScreen(app, isWin) {
           <div style="color:#00ffff;">${app.game?.resources?.science || 0}</div>
           <div style="color:#888;">LP Earned:</div>
           <div style="color:#4ecdc4;">+${lpGain}</div>
+          <div style="color:#888;">Victory Path:</div>
+          <div style="color:${isWin ? '#4ecdc4' : '#888'};">${isWin ? victoryReason.toUpperCase() : 'FAILED'}</div>
         </div>
       </div>
 

@@ -324,6 +324,13 @@ describe('GameSession', () => {
       expect(result).toBe(true)
       expect(session.phase).toBe('lost')
     })
+
+    it('supports alternate knowledge victories', () => {
+      session.researched = new Set(['archery', 'steel_working', 'currency', 'ballistics'])
+      session.addObject('1,0,-1', { type: 'library', owner: 'player', hp: 10 })
+      session.addObject('0,1,-1', { type: 'library', owner: 'player', hp: 10 })
+      expect(session._checkVictoryConditions()).toBe('knowledge')
+    })
   })
 
   describe('turn reports', () => {
@@ -438,6 +445,26 @@ describe('GameSession', () => {
       const warnings = session.getEndTurnWarnings()
       expect(warnings.some((warning) => warning.includes('still ready'))).toBe(true)
       expect(warnings.some((warning) => warning.includes('Food'))).toBe(true)
+    })
+  })
+
+  describe('run branches', () => {
+    it('offers decree turns at 12 and 24', () => {
+      app.showEventModal = vi.fn()
+      session.turn = 12
+      session._maybeOfferDecree()
+      expect(app.showEventModal).toHaveBeenCalledTimes(1)
+      session._maybeOfferDecree()
+      expect(app.showEventModal).toHaveBeenCalledTimes(1)
+    })
+
+    it('tracks multiple victory paths for the HUD', () => {
+      session.resources.gold = 500
+      session.researched = new Set(['archery', 'steel_working'])
+      session.addObject('1,0,-1', { type: 'library', owner: 'player', hp: 10 })
+      const tracks = session.getVictoryTracks()
+      expect(tracks.map((track) => track.id)).toEqual(['treasury', 'knowledge', 'fortress'])
+      expect(tracks.find((track) => track.id === 'treasury').percent).toBeGreaterThan(0)
     })
   })
 

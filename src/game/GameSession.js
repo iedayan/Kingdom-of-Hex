@@ -21,7 +21,7 @@ import {
   META,
   VISION,
 } from './constants.js'
-import { RUN_MODIFIERS, defineOptionalObjectives, buildEnemyWavePlan, describeEnemyWavePlan } from './runContent.js'
+import { RUN_MODIFIERS, defineOptionalObjectives, buildEnemyWavePlan, describeEnemyWavePlan, buildDecreeEvent } from './runContent.js'
 
 export class GameSession {
   constructor({ seed, app }) {
@@ -29,6 +29,7 @@ export class GameSession {
     this.app = app
     this.phase = 'playing'
     this.loseReason = null
+    this.victoryReason = null
     this.elapsed = 0
 
     this.resources = {
@@ -46,9 +47,12 @@ export class GameSession {
       harsherRaids: false,
       sciencePerTurnBonus: 0,
       foodYieldMultiplier: 1,
+      marketGoldBonus: 0,
     }
     this.runStats = { enemyKills: 0 }
     this.objectives = defineOptionalObjectives()
+    this.chosenDecrees = []
+    this._decreeTurnsShown = []
 
     this.researched = new Set()
     this.currentResearch = null
@@ -107,13 +111,18 @@ export class GameSession {
     this.turn++
 
     EventBus.emit('turnStart', { turn: this.turn })
+    this._maybeOfferDecree()
 
     const delay = (ms) => new Promise(res => setTimeout(ms ? res : () => requestAnimationFrame(res), ms))
+    const visibleEnemies = Array.from(this.objects.entries()).filter(([key, obj]) => obj.owner === 'enemy' && this.revealed.has(key))
+    const quietTurn = visibleEnemies.length === 0 && !this._shouldSpawnEnemyWave(this.turn) && this.turn % 10 !== 0
+    const introDelay = quietTurn ? 350 : 1000
+    const resolutionDelay = quietTurn ? 350 : 1200
 
     if (this.app.actionBar) this.app.actionBar.style.pointerEvents = 'none'
 
     EventBus.emit('notification', { text: 'Economic Harvest', duration: 1500 })
-    await delay(1000)
+    await delay(introDelay)
 
     const resourcesBeforeTurn = { ...this.resources }
     let incomes = { gold: 0, wood: 0, food: 0, stone: 0, science: GAME.BASE_SCIENCE_PER_TURN + (this.runRules.sciencePerTurnBonus || 0) }
@@ -167,7 +176,7 @@ export class GameSession {
           const adj = this.objects.get(n)
           return adj && adj.owner === 'player' && !['scout', 'archer', 'knight'].includes(adj.type)
         }).length
-        const marketGold = scaleYield(ECONOMY.MARKET_GOLD_BASE + adjBuildings * ECONOMY.MARKET_GOLD_PER_ADJACENT, mult)
+        const marketGold = scaleYield(ECONOMY.MARKET_GOLD_BASE + adjBuildings * ECONOMY.MARKET_GOLD_PER_ADJACENT + (this.runRules.marketGoldBonus || 0), mult)
 
         if (this.resources.food + incomes.food - foodUpkeep >= ECONOMY.MARKET_FOOD_THRESHOLD) {
           incomes.food -= ECONOMY.MARKET_FOOD_COST
@@ -217,7 +226,7 @@ export class GameSession {
     }
 
     if (this.onUpdateUI) this.onUpdateUI()
-    await delay(1200)
+    await delay(resolutionDelay)
 
     report.research = this._processResearch(report)
 
@@ -253,7 +262,8 @@ export class GameSession {
     EventBus.emit('turnEnd', { turn: this.turn, resources: this.resources, phase: this.phase, report: this.lastTurnReport })
     if (this.onAfterTurn) this.onAfterTurn(this.turn)
 
-    if (this.resources.gold >= WIN_GOLD_GOAL) this.win()
+    const victory = this._checkVictoryConditions()
+    if (victory) this.win(victory)
     else if (this.turn >= MAX_TURNS) this.lose()
   }
 
@@ -268,7 +278,7 @@ export class GameSession {
       }
       if (spawnedTypes.length > 0) {
         EventBus.emit('notification', {
-          text: `${telegraph.plan.name} incoming`,
+          text: telegraph.plan.encounter === 'boss' ? `${telegraph.plan.name} boss raid` : `${telegraph.plan.name} incoming`,
           duration: 1800,
         })
       }
@@ -352,6 +362,40 @@ export class GameSession {
       plan,
       summary: describeEnemyWavePlan(plan),
     }
+  }
+
+  getVictoryTracks() {
+    const libraries = Array.from(this.objects.values()).filter((obj) => obj.owner === 'player' && obj.type === 'library').length
+    const towers = Array.from(this.objects.values()).filter((obj) => obj.owner === 'player' && obj.type === 'tower').length
+    const knowledgeValue = this.researched.size + Math.min(2, libraries)
+    const fortressValue = Math.min(3, towers) + Math.min(2, Math.floor(this.runStats.enemyKills / 10))
+
+    return [
+      {
+        id: 'treasury',
+        label: 'Treasury',
+        value: this.resources.gold,
+        target: WIN_GOLD_GOAL,
+        percent: Math.min(100, (this.resources.gold / WIN_GOLD_GOAL) * 100),
+        completed: this.resources.gold >= WIN_GOLD_GOAL,
+      },
+      {
+        id: 'knowledge',
+        label: 'Knowledge',
+        value: knowledgeValue,
+        target: 6,
+        percent: Math.min(100, (knowledgeValue / 6) * 100),
+        completed: this.researched.size >= 4 && libraries >= 2,
+      },
+      {
+        id: 'fortress',
+        label: 'Fortress',
+        value: fortressValue,
+        target: 5,
+        percent: Math.min(100, (fortressValue / 5) * 100),
+        completed: this.turn >= 30 && towers >= 3 && this.runStats.enemyKills >= 20,
+      },
+    ]
   }
 
   getUpcomingRaidTelegraph(limit = 3) {
@@ -460,7 +504,7 @@ export class GameSession {
           const adj = this.objects.get(n)
           return adj && adj.owner === 'player' && !['scout', 'archer', 'knight'].includes(adj.type)
         }).length
-        const marketGold = scaleYield(ECONOMY.MARKET_GOLD_BASE + adjBuildings * ECONOMY.MARKET_GOLD_PER_ADJACENT, mult)
+        const marketGold = scaleYield(ECONOMY.MARKET_GOLD_BASE + adjBuildings * ECONOMY.MARKET_GOLD_PER_ADJACENT + (this.runRules.marketGoldBonus || 0), mult)
         if (this.resources.food + foodIncome - foodUpkeep - marketFoodSpent >= ECONOMY.MARKET_FOOD_THRESHOLD) {
           marketFoodSpent += ECONOMY.MARKET_FOOD_COST
           goldIncome += marketGold
@@ -635,7 +679,7 @@ export class GameSession {
       unit.rank = nextRank
       unit.maxHp += COMBAT.HP_PER_RANK
       unit.hp = unit.maxHp
-      unit.atk += COMBAT.ATK_PER_RANK
+      this.refreshPlayerCombatBonuses()
       log(`[GAME] ${unit.type} reached Rank ${unit.rank}!`, 'color: gold')
       EventBus.emit('floatingText', { text: `RANK ${unit.rank} UP!`, position: cKey, color: '#ffd700' })
       EventBus.emit('unitRankUp', { unitType: unit.type, rank: unit.rank })
@@ -734,13 +778,7 @@ export class GameSession {
     if (!mod) return
     this.runModifier = mod.id
     mod.apply(this)
-    if (this.runRules.playerCombatMultiplier && this.runRules.playerCombatMultiplier !== 1) {
-      for (const obj of this.objects.values()) {
-        if (obj.owner === 'player' && typeof obj.atk === 'number') {
-          obj.atk = Math.max(1, Math.round(obj.atk * this.runRules.playerCombatMultiplier))
-        }
-      }
-    }
+    this.refreshPlayerCombatBonuses()
     EventBus.emit('notification', { text: `Run Modifier: ${mod.name}`, duration: 2200 })
   }
 
@@ -803,8 +841,9 @@ export class GameSession {
       }))
   }
 
-  win() {
+  win(reason = 'treasury') {
     this.phase = 'won'
+    this.victoryReason = reason
     saveManager.clearSession()
     const lpGain = META.LP_WIN_FORMULA(this.resources.gold, this.resources.science)
     saveManager.addLP(lpGain)
@@ -816,7 +855,7 @@ export class GameSession {
     if (milestone.gained > 0) {
       EventBus.emit('notification', { text: `Milestones unlocked +${milestone.gained} LP`, duration: 2200 })
     }
-    EventBus.emit('gameEnd', { victory: true, resources: this.resources })
+    EventBus.emit('gameEnd', { victory: true, resources: this.resources, victoryReason: reason })
     if (this.onUpdateUI) this.onUpdateUI()
   }
 
@@ -855,6 +894,9 @@ export class GameSession {
       runStats: { ...this.runStats },
       objectives: JSON.parse(JSON.stringify(this.objectives)),
       lastTurnReport: this.lastTurnReport ? JSON.parse(JSON.stringify(this.lastTurnReport)) : null,
+      chosenDecrees: [...this.chosenDecrees],
+      decreeTurnsShown: [...this._decreeTurnsShown],
+      victoryReason: this.victoryReason,
     }
   }
 
@@ -874,6 +916,42 @@ export class GameSession {
     if (data.runStats) this.runStats = { ...this.runStats, ...data.runStats }
     if (data.objectives) this.objectives = data.objectives
     if (data.lastTurnReport) this.lastTurnReport = data.lastTurnReport
+    if (data.chosenDecrees) this.chosenDecrees = [...data.chosenDecrees]
+    if (data.decreeTurnsShown) this._decreeTurnsShown = [...data.decreeTurnsShown]
+    if (data.victoryReason) this.victoryReason = data.victoryReason
+  }
+
+  refreshPlayerCombatBonuses() {
+    for (const obj of this.objects.values()) {
+      if (obj.owner !== 'player' || !UNITS[obj.type]) continue
+      const rankBonus = Math.max(0, (obj.rank || 1) - 1) * COMBAT.ATK_PER_RANK
+      const baseAtk = (UNITS[obj.type]?.atk || obj.atk || 1) + rankBonus
+      obj.atk = Math.max(1, Math.round(baseAtk * (this.runRules.playerCombatMultiplier || 1)))
+    }
+  }
+
+  _maybeOfferDecree() {
+    if (![12, 24].includes(this.turn) || this._decreeTurnsShown.includes(this.turn)) return
+    this._decreeTurnsShown.push(this.turn)
+    const event = buildDecreeEvent(this.turn, this.seed)
+    event.options = event.options.map((option) => ({
+      ...option,
+      act: (session) => {
+        if (!session.chosenDecrees.includes(option.decreeId)) session.chosenDecrees.push(option.decreeId)
+        const original = buildDecreeEvent(this.turn, this.seed).options.find((entry) => entry.decreeId === option.decreeId)
+        original?.act(session)
+        session.refreshPlayerCombatBonuses()
+      },
+    }))
+    this.app?.showEventModal?.(event)
+  }
+
+  _checkVictoryConditions() {
+    const tracks = this.getVictoryTracks()
+    if (tracks.find((track) => track.id === 'treasury')?.completed) return 'treasury'
+    if (tracks.find((track) => track.id === 'knowledge')?.completed) return 'knowledge'
+    if (tracks.find((track) => track.id === 'fortress')?.completed) return 'fortress'
+    return null
   }
 
   _createEmptyTurnReport(turn) {
