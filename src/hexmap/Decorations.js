@@ -466,7 +466,7 @@ export class Decorations {
         const fanInstanceId = this._placeInstance(this.mesh, this.geomIds, 'building_windmill_top_fan_yellow', fanX, fanY, fanZ, waterAngle, 1, tile.level)
         if (fanInstanceId === -1) break
         this.buildings.push({ tile, meshName: 'building_windmill_top_fan_yellow', instanceId: fanInstanceId, rotationY: waterAngle, oy: WINDMILL_FAN_OFFSET.y, oz: fanOz, ox: fanOx })
-        const fan = { instanceId: fanInstanceId, x: fanX, y: fanY, z: fanZ, baseRotationY: waterAngle, spin: { angle: 0 } }
+        const fan = { tile, instanceId: fanInstanceId, x: fanX, y: fanY, z: fanZ, baseRotationY: waterAngle, spin: { angle: 0 } }
         fan.tween = gsap.to(fan.spin, {
           angle: Math.PI * 2,
           duration: 4,
@@ -788,7 +788,7 @@ export class Decorations {
         const mtRotY = Math.floor(random() * 6) * Math.PI / 3
         const instanceId = this._placeInstance(this.mesh, this.geomIds, meshName, localPos.x, baseY, localPos.z, mtRotY, 1, tile.level)
         if (instanceId === -1) continue
-        this.mountains.push({ tile, meshName, instanceId, rotationY })
+        this.mountains.push({ tile, meshName, instanceId, rotationY: mtRotY })
       } else if (def.levelIncrement === 1 && hasHills) {
         if (this.hills.length >= MAX_HILLS - 1) continue
         const meshName = weightedPick(HillDefs)
@@ -1037,7 +1037,7 @@ export class Decorations {
       // Hills and mountains
       const isCliff = def.levelIncrement && name.includes('CLIFF')
       const isRiverEnd = name === 'RIVER_END'
-      const isHighGrass = name === 'GRASS' && tile.level >= 2
+      const isHighGrass = name === 'GRASS' && tile.level >= LEVELS_COUNT - 1
       if ((isCliff || isRiverEnd || isHighGrass) && this.mesh) {
         const chance = isRiverEnd ? 0.7 : isHighGrass ? 0.1 : 0.1
         if (random() <= chance) {
@@ -1145,6 +1145,13 @@ export class Decorations {
         return true
       })
     }
+    this.windmillFans = this.windmillFans.filter(fan => {
+      if (fan.tile?.gridX === gridX && fan.tile?.gridZ === gridZ) {
+        fan.tween?.kill()
+        return false
+      }
+      return true
+    })
     this.trees = filterOut(this.trees, this.mesh)
     this.flowers = filterOut(this.flowers, this.mesh)
     this.buildings = filterOut(this.buildings, this.mesh)
