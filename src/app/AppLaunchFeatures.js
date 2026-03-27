@@ -1,8 +1,11 @@
 import { PLAYER_UNIT_TYPES } from '../game/constants.js'
+import { installPlaytestTools, recordPlaytestRun } from '../game/playtestHistory.js'
 
 export function initLaunchFeatures(app, deps) {
   const { fpsMonitor, KeyboardController } = deps
   const urlParams = new URLSearchParams(window.location.search)
+
+  installPlaytestTools(window)
 
   if (urlParams.get('fps') === '1') fpsMonitor.start()
   if (urlParams.get('debug') === '1') {
@@ -104,6 +107,7 @@ export function setupAnalytics(app, deps) {
   })
 
   EventBus.on('gameEnd', (data) => {
+    recordPlaytestRun(app.game, data)
     if (data.victory) Analytics.trackWin(data.resources.gold)
     else Analytics.trackLoss(data.reason)
   })

@@ -109,8 +109,6 @@ const Analytics = {
       finalScore,
       duration: Date.now() - this.session.startTime
     })
-    saveManager.data.total_wins++
-    saveManager.save()
   },
 
   trackLoss(reason) {
@@ -119,8 +117,6 @@ const Analytics = {
       reason,
       duration: Date.now() - this.session.startTime
     })
-    saveManager.data.total_losses = (saveManager.data.total_losses || 0) + 1
-    saveManager.save()
   },
 
   trackError(error, context = {}) {
@@ -153,9 +149,8 @@ const Analytics = {
 
   _calculateWinRate() {
     const wins = saveManager.data.wins || 0
-    const losses = saveManager.data.total_losses || 0
-    const total = wins + losses
-    return total > 0 ? Math.round((wins / total) * 100) : 0
+    const runs = saveManager.data.runs || 0
+    return runs > 0 ? Math.round((wins / runs) * 100) : 0
   },
 
   _calculateAvgTurns() {

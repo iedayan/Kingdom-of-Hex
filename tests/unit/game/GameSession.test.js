@@ -454,6 +454,13 @@ describe('GameSession', () => {
       expect(session.getRecruitableUnitTypes()).toEqual(['scout', 'archer', 'knight', 'sentinel'])
     })
 
+    it('smooths scholar court starts with extra food while preserving the lean modifier', () => {
+      session.applyRunModifier('scholar_court')
+      expect(session.resources.food).toBe(95)
+      expect(session.runRules.foodYieldMultiplier).toBeCloseTo(0.85)
+      expect(session.techTree.scholarship.progress).toBe(10)
+    })
+
     it('offers decree turns at 12 and 24', () => {
       app.showEventModal = vi.fn()
       session.turn = 12

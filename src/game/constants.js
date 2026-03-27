@@ -50,10 +50,10 @@ export const UNITS = {
   outrider: {
     hp: 12,
     maxHp: 12,
-    atk: 3,
+    atk: 4,
     range: 1,
     mp: 4,
-    cost: 75,
+    cost: 70,
     sight: 3,
   },
   sentinel: {
@@ -61,17 +61,17 @@ export const UNITS = {
     maxHp: 24,
     atk: 5,
     range: 1,
-    mp: 1,
+    mp: 2,
     cost: 90,
     sight: 1,
   },
   sageguard: {
     hp: 9,
     maxHp: 9,
-    atk: 3,
+    atk: 4,
     range: 2,
     mp: 2,
-    cost: 70,
+    cost: 65,
     sight: 2,
   },
   goblin: {

@@ -40,6 +40,7 @@ export const RUN_MODIFIERS = [
     apply(session) {
       session.runRules.sciencePerTurnBonus = 3
       session.runRules.foodYieldMultiplier = 0.85
+      session.resources.food += 20
       session.techTree.scholarship.progress += 10
     },
   },

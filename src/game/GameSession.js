@@ -12,6 +12,7 @@ import { EventBus } from '../core/events/EventBus.js'
 import { CombatSystem } from './CombatSystem.js'
 import { EnemyAISystem } from './EnemyAISystem.js'
 import { ResearchSystem } from './ResearchSystem.js'
+import { TECH_TREE } from './GameData.js'
 import {
   GAME,
   UNITS,
@@ -51,7 +52,7 @@ export class GameSession {
       foodYieldMultiplier: 1,
       marketGoldBonus: 0,
     }
-    this.runStats = { enemyKills: 0 }
+    this.runStats = { enemyKills: 0, wavesFaced: 0, objectivesCompleted: 0 }
     this.objectives = defineOptionalObjectives()
     this.chosenDecrees = []
     this._decreeTurnsShown = []
@@ -66,13 +67,17 @@ export class GameSession {
 
     this.biomes = new Map()
     this.biomes.set('0,0', 'temperate')
-    this.techTree = {
-      'archery': { name: 'Archery', cost: 25, unlocks: ['archer'], requires: [], progress: 0 },
-      'steel_working': { name: 'Steel Working', cost: 55, unlocks: ['knight'], requires: [], progress: 0 },
-      'currency': { name: 'Currency', cost: 35, unlocks: ['market'], requires: [], progress: 0 },
-      'ballistics': { name: 'Ballistics', cost: 70, unlocks: ['tower'], requires: ['archery'], progress: 0 },
-      'scholarship': { name: 'Scholarship', cost: 15, unlocks: ['library'], requires: [], progress: 0 }
-    }
+    this.techTree = Object.fromEntries(
+      Object.entries(TECH_TREE).map(([key, tech]) => [
+        key,
+        {
+          ...tech,
+          unlocks: [...tech.unlocks],
+          requires: [...tech.requires],
+          progress: 0,
+        },
+      ])
+    )
 
     this.objects = new Map()
 
@@ -279,6 +284,7 @@ export class GameSession {
         EventBus.emit('floatingText', { text: `${spawn.unitType.replace('goblin_', 'GOBLIN ').toUpperCase()} ARRIVES!`, position: spawn.key, color: 'var(--hx-danger)' })
       }
       if (spawnedTypes.length > 0) {
+        this.runStats.wavesFaced += 1
         EventBus.emit('notification', {
           text: telegraph.plan.encounter === 'boss' ? `${telegraph.plan.name} boss raid` : `${telegraph.plan.name} incoming`,
           duration: 1800,
@@ -803,6 +809,7 @@ export class GameSession {
       }
       if (obj.check(this)) {
         obj.completed = true
+        this.runStats.objectivesCompleted += 1
         for (const [k, v] of Object.entries(obj.reward)) {
           this.resources[k] = (this.resources[k] || 0) + v
           if (report?.objectiveRewards?.[k] !== undefined) report.objectiveRewards[k] += v
@@ -857,7 +864,7 @@ export class GameSession {
     saveManager.addLP(lpGain)
     saveManager.data.wins++
     saveManager.data.runs++
-    saveManager.data.stats.total_gold += this.resources.gold
+    this._recordPersistentRunStats({ won: true })
     const milestone = saveManager.evaluateMilestones()
     saveManager.save()
     if (milestone.gained > 0) {
@@ -874,7 +881,7 @@ export class GameSession {
     const lpGain = META.LP_LOSE_FORMULA(this.resources.gold, this.resources.science)
     saveManager.addLP(lpGain)
     saveManager.data.runs++
-    saveManager.data.stats.total_gold += this.resources.gold
+    this._recordPersistentRunStats({ won: false })
     const milestone = saveManager.evaluateMilestones()
     saveManager.save()
     if (milestone.gained > 0) {
@@ -1088,6 +1095,18 @@ export class GameSession {
     }
     if (this.resources.gold < 100) {
       report.warnings.push('Treasury is thin')
+    }
+  }
+
+  _recordPersistentRunStats({ won }) {
+    saveManager.data.stats.total_gold += this.resources.gold
+    saveManager.data.stats.total_kills += this.runStats.enemyKills || 0
+    const enemiesRemaining = Array.from(this.objects.values()).filter((obj) => obj.owner === 'enemy').length
+    const wavesSurvived = won ? (this.runStats.wavesFaced || 0) : Math.max(0, (this.runStats.wavesFaced || 0) - (enemiesRemaining > 0 ? 1 : 0))
+    saveManager.data.stats.total_waves_survived += wavesSurvived
+    if (won) {
+      const currentBest = saveManager.data.stats.fastest_win
+      if (currentBest == null || this.turn < currentBest) saveManager.data.stats.fastest_win = this.turn
     }
   }
 

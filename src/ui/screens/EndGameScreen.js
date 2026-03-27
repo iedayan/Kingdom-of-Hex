@@ -1,12 +1,24 @@
 import { saveManager } from '../../game/SaveManager.js'
 import { Sounds } from '../../core/audio/Sounds.js'
+import { buildPlaytestRunSummary } from '../../game/playtestHistory.js'
 
 export function createEndGameScreen(app, isWin) {
   const stats = saveManager.getStats()
   const victoryReason = app.game?.victoryReason || 'treasury'
+  const summary = buildPlaytestRunSummary(app.game, {
+    victory: isWin,
+    reason: app.game?.loseReason,
+    victoryReason,
+  })
   const lpGain = isWin 
     ? Math.floor((app.game?.resources?.gold || 0) / 10) + (app.game?.resources?.science || 0)
     : Math.floor(((app.game?.resources?.gold || 0) / 20) + ((app.game?.resources?.science || 0) / 2))
+  const objectiveText = summary?.completedObjectives?.length
+    ? `${summary.completedObjectives.length} objectives completed`
+    : 'No optional objectives secured'
+  const decreeText = summary?.decrees?.length ? summary.decrees.join(' · ') : 'No decrees chosen'
+  const identityText = summary?.identity?.name || 'Unsworn Realm'
+  const bestTrackText = summary?.bestTrack ? `${summary.bestTrack.label} ${summary.bestTrack.percent}%` : 'No progress'
 
   const overlay = document.createElement('div')
   overlay.id = 'endgame-overlay'
@@ -63,6 +75,22 @@ export function createEndGameScreen(app, isWin) {
       </p>
 
       <div style="
+        background:rgba(255,255,255,0.04);
+        border-radius:12px;
+        padding:0.9rem 1rem;
+        margin-bottom:1rem;
+        text-align:left;
+        font-size:0.85rem;
+        line-height:1.55;
+      ">
+        <div style="color:#9cc9ff;">Realm: <b style="color:white">${identityText}</b></div>
+        <div style="color:#9cc9ff;">Seed: <b style="color:white">${summary?.seed || ''}</b></div>
+        <div style="color:#9cc9ff;">Best Track: <b style="color:white">${bestTrackText}</b></div>
+        <div style="color:#9cc9ff;">Objectives: <b style="color:white">${objectiveText}</b></div>
+        <div style="color:#9cc9ff;">Decrees: <b style="color:white">${decreeText}</b></div>
+      </div>
+
+      <div style="
         background:rgba(255,255,255,0.05);
         border-radius:12px;
         padding:1.25rem;
@@ -92,7 +120,7 @@ export function createEndGameScreen(app, isWin) {
         <div style="display:flex; justify-content:space-around; font-size:0.85rem;">
           <div>
             <div style="color:#888;">Total LP</div>
-            <div style="color:#4ecdc4; font-size:1.5rem; font-weight:bold;">${stats.lp + (isWin ? lpGain : 0)}</div>
+            <div style="color:#4ecdc4; font-size:1.5rem; font-weight:bold;">${stats.lp}</div>
           </div>
           <div>
             <div style="color:#888;">Wins</div>
@@ -106,6 +134,17 @@ export function createEndGameScreen(app, isWin) {
       </div>
 
       <div style="display:flex; gap:0.75rem; flex-direction:column;">
+        <button id="copy-seed" style="
+          padding:0.75rem;
+          border-radius:10px;
+          border:1px solid rgba(255,255,255,0.16);
+          background:rgba(255,255,255,0.04);
+          color:#ddd;
+          font-size:0.9rem;
+          cursor:pointer;
+        ">
+          Copy Seed
+        </button>
         <button id="play-again" style="
           padding:0.875rem;
           border-radius:10px;
@@ -152,6 +191,14 @@ export function createEndGameScreen(app, isWin) {
   }
 
   document.body.appendChild(overlay)
+
+  document.getElementById('copy-seed').onclick = async () => {
+    const seedText = summary?.seed || ''
+    if (!seedText) return
+    try {
+      await navigator.clipboard?.writeText(seedText)
+    } catch {}
+  }
 
   document.getElementById('play-again').onclick = () => {
     overlay.remove()
