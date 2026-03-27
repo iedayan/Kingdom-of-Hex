@@ -458,6 +458,66 @@ body.hx-high-contrast {
   font-weight: 500;
 }
 
+.hx-turn-report {
+  pointer-events: none;
+  width: min(34rem, 94vw);
+  margin-top: 6px;
+  padding: 10px 14px;
+  border-radius: 14px;
+  background:
+    linear-gradient(180deg, rgba(17, 20, 29, 0.9) 0%, rgba(11, 13, 19, 0.84) 100%);
+  border: 1px solid rgba(212, 165, 116, 0.18);
+  box-shadow:
+    0 12px 30px rgba(0, 0, 0, 0.32),
+    0 1px 0 rgba(255, 255, 255, 0.05) inset;
+  color: var(--hx-text-secondary);
+  text-align: center;
+}
+
+.hx-turn-report--danger {
+  border-color: rgba(239, 68, 68, 0.36);
+  box-shadow:
+    0 12px 30px rgba(0, 0, 0, 0.32),
+    0 0 0 1px rgba(239, 68, 68, 0.12) inset;
+}
+
+.hx-turn-report__title {
+  font-family: var(--hx-font-ui);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--hx-accent-gold);
+}
+
+.hx-turn-report__grid {
+  margin-top: 6px;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px 12px;
+  font-family: var(--hx-font-ui);
+  font-size: 12px;
+}
+
+.hx-turn-report__grid strong {
+  margin-left: 4px;
+  color: var(--hx-text-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+.hx-turn-report__warnings {
+  margin-top: 8px;
+  color: #f7b267;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.hx-turn-report__notes {
+  margin-top: 4px;
+  color: var(--hx-text-muted);
+  font-size: 11px;
+}
+
 /* 3D label on crown hex (CSS2D) */
 .hx-capital-tag {
   font-family: var(--hx-font-ui);

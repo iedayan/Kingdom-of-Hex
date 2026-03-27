@@ -71,6 +71,7 @@ export class GameSession {
     this.objects = new Map()
 
     this._endTurnHintUnmoved = false
+    this.lastTurnReport = this._createEmptyTurnReport(this.turn)
 
     this.onUpdateUI = null
     this.onAfterTurn = null
@@ -114,13 +115,18 @@ export class GameSession {
     EventBus.emit('notification', { text: 'Economic Harvest', duration: 1500 })
     await delay(1000)
 
+    const resourcesBeforeTurn = { ...this.resources }
     let incomes = { gold: 0, wood: 0, food: 0, stone: 0, science: GAME.BASE_SCIENCE_PER_TURN + (this.runRules.sciencePerTurnBonus || 0) }
     let foodUpkeep = 0
+    const report = this._createEmptyTurnReport(this.turn)
+    report.gross.science = incomes.science
+    report.notes.push(`Base science +${incomes.science}`)
     for (const [cKey, obj] of this.objects.entries()) {
       if (obj.owner === 'player' && ['scout', 'archer', 'knight'].includes(obj.type)) {
         foodUpkeep += GAME.UNIT_FOOD_UPKEEP
       }
     }
+    report.foodUpkeep = foodUpkeep
 
     for (const [cKey, obj] of this.objects.entries()) {
       if (obj.owner !== 'player') continue
@@ -151,6 +157,8 @@ export class GameSession {
 
       if (gain) {
         incomes[gain.type] += gain.amount
+        report.gross[gain.type] += gain.amount
+        report.buildings[obj.type] = (report.buildings[obj.type] || 0) + gain.amount
         EventBus.emit('floatingText', { text: `+${gain.amount} ${gain.icon}`, position: cKey, color: gain.color })
       }
 
@@ -164,6 +172,10 @@ export class GameSession {
         if (this.resources.food + incomes.food - foodUpkeep >= ECONOMY.MARKET_FOOD_THRESHOLD) {
           incomes.food -= ECONOMY.MARKET_FOOD_COST
           incomes.gold += marketGold
+          report.marketConversions += 1
+          report.marketFoodSpent += ECONOMY.MARKET_FOOD_COST
+          report.marketGoldGained += marketGold
+          report.gross.gold += marketGold
           EventBus.emit('floatingText', { text: `+${marketGold} 🪙`, position: cKey, color: '#ffd700' })
         }
       }
@@ -178,17 +190,22 @@ export class GameSession {
     this.resources.science += incomes.science
 
     tryResolveWorldEvent(this, this.app)
+    report.worldEventTurn = this.turn > 1 && this.turn % 10 === 0
 
     if (foodUpkeep > 0) {
       if (this.resources.food >= foodUpkeep) {
         this.resources.food -= foodUpkeep
+        report.upkeepPaid = foodUpkeep
         EventBus.emit('floatingText', { text: `-${foodUpkeep} 🌾 (UPKEEP)`, position: 'capital', color: '#ff4444' })
       } else {
+        report.upkeepPaid = this.resources.food
         this.resources.food = 0
+        report.starvation = true
         EventBus.emit('floatingText', { text: `STARVATION!`, position: 'capital', color: '#ff4444' })
         for (const [cKey, obj] of this.objects.entries()) {
           if (obj.owner === 'player' && ['scout', 'archer', 'knight'].includes(obj.type)) {
             obj.hp -= 2
+            report.starvationHits += 1
             EventBus.emit('floatingText', { text: '-2 HP 🍖', position: cKey, color: '#ff4444' })
             if (obj.hp <= 0) {
               this.removeUnit(cKey)
@@ -202,17 +219,22 @@ export class GameSession {
     if (this.onUpdateUI) this.onUpdateUI()
     await delay(1200)
 
-    this._processResearch()
+    report.research = this._processResearch(report)
 
     EventBus.emit('enemyIntentCalculate')
 
     await this._enemyAISystem.processEnemyTurn()
 
-    if (this._shouldSpawnEnemyWave(this.turn)) {
+    report.waveIncoming = this._shouldSpawnEnemyWave(this.turn)
+    report.nextWaveTurn = this.getNextWaveTurn(this.turn + 1)
+    if (report.waveIncoming) {
       this._processEnemyWave()
     }
 
-    this._updateObjectives()
+    this._updateObjectives(report)
+
+    this._finalizeTurnReport(report, resourcesBeforeTurn)
+    this.lastTurnReport = report
 
     for (const obj of this.objects.values()) {
       if (obj.owner !== 'player') continue
@@ -228,7 +250,7 @@ export class GameSession {
     }
     this._endTurnHintUnmoved = false
 
-    EventBus.emit('turnEnd', { turn: this.turn, resources: this.resources, phase: this.phase })
+    EventBus.emit('turnEnd', { turn: this.turn, resources: this.resources, phase: this.phase, report: this.lastTurnReport })
     if (this.onAfterTurn) this.onAfterTurn(this.turn)
 
     if (this.resources.gold >= WIN_GOLD_GOAL) this.win()
@@ -474,13 +496,26 @@ export class GameSession {
   }
 
   _processResearch() {
-    if (!this.currentResearch || !this._researchSystem) return
+    if (!this.currentResearch || !this._researchSystem) return null
 
+    const activeKey = this.currentResearch
+    const activeTech = this.techTree[activeKey]
+    const scienceBefore = this.resources.science
     const completed = this._researchSystem.processResearch()
+    const scienceSpent = Math.max(0, scienceBefore - this.resources.science)
     if (completed) {
       EventBus.emit('floatingText', { text: 'TECH MASTERED!', position: 'capital', color: '#00ffff' })
     }
     if (this.onUpdateUI) this.onUpdateUI()
+    return {
+      key: completed || activeKey,
+      name: activeTech?.name || completed,
+      completed: Boolean(completed),
+      scienceSpent,
+      remainingScience: this.resources.science,
+      progress: this.techTree[completed || activeKey]?.progress ?? activeTech?.progress ?? 0,
+      cost: this.techTree[completed || activeKey]?.cost ?? activeTech?.cost ?? 0,
+    }
   }
 
   checkLevelUp(cKey, unit) {
@@ -604,7 +639,7 @@ export class GameSession {
     this.runStats.enemyKills += 1
   }
 
-  _updateObjectives() {
+  _updateObjectives(report = null) {
     for (const obj of this.objectives) {
       if (obj.completed || obj.failed) continue
       if (this.turn > obj.deadline) {
@@ -613,7 +648,11 @@ export class GameSession {
       }
       if (obj.check(this)) {
         obj.completed = true
-        for (const [k, v] of Object.entries(obj.reward)) this.resources[k] = (this.resources[k] || 0) + v
+        for (const [k, v] of Object.entries(obj.reward)) {
+          this.resources[k] = (this.resources[k] || 0) + v
+          if (report?.objectiveRewards?.[k] !== undefined) report.objectiveRewards[k] += v
+        }
+        if (report) report.completedObjectives.push(obj.title)
         EventBus.emit('notification', { text: `Objective Complete: ${obj.title}`, duration: 1900 })
       }
     }
@@ -624,6 +663,10 @@ export class GameSession {
       const state = o.completed ? 'COMPLETED' : (o.failed ? 'FAILED' : `Turn ${o.deadline}`)
       return `${o.title} — ${state}`
     })
+  }
+
+  getLastTurnReport() {
+    return this.lastTurnReport
   }
 
   win() {
@@ -677,6 +720,7 @@ export class GameSession {
       runRules: { ...this.runRules },
       runStats: { ...this.runStats },
       objectives: JSON.parse(JSON.stringify(this.objectives)),
+      lastTurnReport: this.lastTurnReport ? JSON.parse(JSON.stringify(this.lastTurnReport)) : null,
     }
   }
 
@@ -695,6 +739,71 @@ export class GameSession {
     if (data.runRules) this.runRules = { ...this.runRules, ...data.runRules }
     if (data.runStats) this.runStats = { ...this.runStats, ...data.runStats }
     if (data.objectives) this.objectives = data.objectives
+    if (data.lastTurnReport) this.lastTurnReport = data.lastTurnReport
+  }
+
+  _createEmptyTurnReport(turn) {
+    return {
+      turn,
+      gross: { gold: 0, wood: 0, food: 0, stone: 0, science: 0 },
+      net: { gold: 0, wood: 0, food: 0, stone: 0, science: 0 },
+      buildings: {},
+      foodUpkeep: 0,
+      upkeepPaid: 0,
+      starvation: false,
+      starvationHits: 0,
+      marketConversions: 0,
+      marketFoodSpent: 0,
+      marketGoldGained: 0,
+      objectiveRewards: { gold: 0, wood: 0, food: 0, stone: 0, science: 0 },
+      completedObjectives: [],
+      worldEventTurn: false,
+      waveIncoming: false,
+      nextWaveTurn: this.getNextWaveTurn(turn + 1),
+      research: null,
+      notes: [],
+      warnings: [],
+    }
+  }
+
+  _finalizeTurnReport(report, resourcesBeforeTurn) {
+    for (const key of Object.keys(report.net)) {
+      report.net[key] = (this.resources[key] || 0) - (resourcesBeforeTurn[key] || 0)
+    }
+
+    if (report.marketConversions > 0) {
+      report.notes.push(`Markets traded ${report.marketFoodSpent} food for ${report.marketGoldGained} gold`)
+    }
+    if (report.completedObjectives.length > 0) {
+      report.notes.push(`Objective cleared: ${report.completedObjectives.join(', ')}`)
+    }
+    if (report.research?.scienceSpent) {
+      const remaining = Math.max(0, (report.research.cost || 0) - (report.research.progress || 0))
+      report.notes.push(
+        report.research.completed
+          ? `${report.research.name} completed`
+          : `${report.research.name} advanced, ${remaining} science remaining`
+      )
+    }
+    if (report.worldEventTurn) {
+      report.notes.push('A world event was triggered this turn')
+    }
+    if (report.waveIncoming) {
+      report.warnings.push('Raid reached the realm this turn')
+    } else if (typeof report.nextWaveTurn === 'number') {
+      const turnsUntilWave = Math.max(0, report.nextWaveTurn - this.turn)
+      if (turnsUntilWave <= 2) {
+        report.warnings.push(`Raid in ${turnsUntilWave} turn${turnsUntilWave === 1 ? '' : 's'}`)
+      }
+    }
+    if (report.starvation) {
+      report.warnings.push(`Starvation hit ${report.starvationHits} unit${report.starvationHits === 1 ? '' : 's'}`)
+    } else if (this.resources.food <= Math.max(8, report.foodUpkeep)) {
+      report.warnings.push('Food reserves are low')
+    }
+    if (this.resources.gold < 100) {
+      report.warnings.push('Treasury is thin')
+    }
   }
 
   dispose() {

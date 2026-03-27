@@ -326,6 +326,45 @@ describe('GameSession', () => {
     })
   })
 
+  describe('turn reports', () => {
+    it('builds an economy report after ending the turn', async () => {
+      session.addObject('1,0,-1', { type: 'farm', owner: 'player', hp: 10 })
+      session.addObject('0,1,-1', { type: 'market', owner: 'player', hp: 10 })
+      session.spawnUnit('-1,0,1', 'scout', 'player')
+      session.currentResearch = 'archery'
+      vi.spyOn(session._enemyAISystem, 'processEnemyTurn').mockResolvedValue(undefined)
+
+      await session.nextTurn()
+
+      const report = session.getLastTurnReport()
+      expect(report.turn).toBe(2)
+      expect(report.gross.food).toBe(10)
+      expect(report.marketConversions).toBe(1)
+      expect(report.marketGoldGained).toBe(18)
+      expect(report.upkeepPaid).toBe(2)
+      expect(report.objectiveRewards.food).toBe(80)
+      expect(report.completedObjectives).toContain('Protect the Caravan')
+      expect(report.net.gold).toBe(20)
+      expect(report.net.food).toBe(83)
+      expect(report.research?.scienceSpent).toBe(2)
+      expect(report.notes.some((note) => note.includes('Markets traded'))).toBe(true)
+      expect(report.notes.some((note) => note.includes('Objective cleared'))).toBe(true)
+    })
+
+    it('flags starvation turns and low food warnings', async () => {
+      session.resources.food = 0
+      session.spawnUnit('1,0,-1', 'scout', 'player')
+      vi.spyOn(session._enemyAISystem, 'processEnemyTurn').mockResolvedValue(undefined)
+
+      await session.nextTurn()
+
+      const report = session.getLastTurnReport()
+      expect(report.starvation).toBe(true)
+      expect(report.starvationHits).toBe(1)
+      expect(report.warnings.some((warning) => warning.includes('Starvation hit'))).toBe(true)
+    })
+  })
+
   describe('tech tree', () => {
     it('has all required technologies', () => {
       expect(session.techTree.archery).toBeDefined()

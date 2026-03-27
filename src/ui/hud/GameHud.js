@@ -154,6 +154,11 @@ export class GameHud {
     app.waveCaption.style.cssText = 'font-size: var(--hx-text-xs); color: rgba(255, 181, 112, 0.88); text-align:center;'
     app.hudTop.appendChild(app.waveCaption)
 
+    app.turnReport = document.createElement('div')
+    app.turnReport.className = 'hx-turn-report'
+    app.turnReport.style.display = 'none'
+    app.hudTop.appendChild(app.turnReport)
+
     app.victoryProgress = document.createElement('div')
     app.victoryProgress.style.cssText = `
       width: 100%;
@@ -363,6 +368,37 @@ export class GameHud {
       app.waveCaption.textContent = nextWave ? `Next Raid T${nextWave.turn}: ${nextWave.plan.name}` : ''
       if (app.nextTurnBtn && nextWave?.summary) {
         app.nextTurnBtn.title = nextWave.summary
+      }
+    }
+    if (app.turnReport && app.game.getLastTurnReport) {
+      const report = app.game.getLastTurnReport()
+      if (report && report.turn > 1) {
+        const delta = (value) => {
+          if (value > 0) return `+${value}`
+          if (value < 0) return `${value}`
+          return '0'
+        }
+        const primaryWarnings = (report.warnings || []).slice(0, 2)
+        const notes = (report.notes || []).slice(0, 2)
+        const warningTone = report.starvation ? ' hx-turn-report--danger' : ''
+        app.turnReport.className = `hx-turn-report${warningTone}`
+        app.turnReport.innerHTML = `
+          <div class="hx-turn-report__title">Turn ${report.turn} Report</div>
+          <div class="hx-turn-report__grid">
+            <span>Gold <strong>${delta(report.net.gold)}</strong></span>
+            <span>Food <strong>${delta(report.net.food)}</strong></span>
+            <span>Wood <strong>${delta(report.net.wood)}</strong></span>
+            <span>Stone <strong>${delta(report.net.stone)}</strong></span>
+            <span>Science <strong>${delta(report.net.science)}</strong></span>
+            <span>Upkeep <strong>${report.upkeepPaid || 0}</strong></span>
+          </div>
+          ${primaryWarnings.length ? `<div class="hx-turn-report__warnings">${primaryWarnings.join(' · ')}</div>` : ''}
+          ${notes.length ? `<div class="hx-turn-report__notes">${notes.join(' · ')}</div>` : ''}
+        `
+        app.turnReport.style.display = 'block'
+      } else {
+        app.turnReport.style.display = 'none'
+        app.turnReport.innerHTML = ''
       }
     }
     if (app.nextTurnBtn) {
