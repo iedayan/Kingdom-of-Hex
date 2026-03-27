@@ -123,13 +123,14 @@ export class Decorations {
   }
 
   /** Create a decoration instance: add geometry, set color/transform, return instanceId (-1 on failure) */
-  _placeInstance(mesh, geomIds, meshName, x, y, z, rotY = 0, scale = 1, level = 0) {
+  _placeInstance(mesh, geomIds, meshName, x, y, z, rotY = 0, scale = 1, level = 0, biomeVal = 0) {
     const geomId = geomIds.get(meshName)
     if (geomId === undefined) return -1
     const instanceId = this._addInstance(mesh, geomId)
     if (instanceId === -1) return -1
     const c = levelColor(level)
-    c.b = rotY / (Math.PI * 2)
+    c.g = biomeVal
+    c.b = 1.0 // Decoration flag (replaces rotation-storage in Blue channel)
     mesh.setColorAt(instanceId, c)
     this.dummy.position.set(x, y, z)
     this.dummy.rotation.set(0, rotY, 0)
@@ -268,7 +269,10 @@ export class Decorations {
       const ox = (random() - 0.5) * 0.4
       const oz = (random() - 0.5) * 0.4
       const c = levelColor(tile.level)
-      c.b = rotationY / (Math.PI * 2)
+      const grid = this.scene.userData.hexGrid
+    const biomeVal = grid?.biome === 'winter' ? 0.5 : (grid?.biome === 'wasteland' ? 1.0 : 0.0)
+      c.g = biomeVal
+      c.b = 1.0
       this.mesh.setColorAt(instanceId, c)
       this.dummy.position.set(
         localPos.x + ox,
@@ -378,6 +382,9 @@ export class Decorations {
       if (name === 'building_blacksmith_yellow') hasBlacksmith = true
     }
 
+    const grid = this.scene.userData.hexGrid
+    const biomeVal = grid?.biome === 'winter' ? 0.5 : (grid?.biome === 'wasteland' ? 1.0 : 0.0)
+
     for (const { tile, roadAngle } of deadEndCandidates) {
       if (this.buildings.length >= MAX_BUILDINGS - 1) break
 
@@ -389,7 +396,7 @@ export class Decorations {
 
       let meshName = weightedPick(BuildingDefs)
       if (rerollIfUnique(meshName)) meshName = weightedPick(BuildingDefs)
-      const instanceId = this._placeInstance(this.mesh, this.geomIds, meshName, localPos.x, baseY, localPos.z, roadAngle, 1, tile.level)
+      const instanceId = this._placeInstance(this.mesh, this.geomIds, meshName, localPos.x, baseY, localPos.z, roadAngle, 1, tile.level, biomeVal)
       if (instanceId === -1) break
       trackUnique(meshName)
       this.buildings.push({ tile, meshName, instanceId, rotationY: roadAngle })
@@ -397,7 +404,7 @@ export class Decorations {
 
       // Optionally place tower top
       if (meshName === 'building_tower_A_yellow' && random() < TOWER_TOP_CHANCE) {
-        const topId = this._placeInstance(this.mesh, this.geomIds, TOWER_TOP_MESH, localPos.x, baseY, localPos.z, roadAngle, 1, tile.level)
+        const topId = this._placeInstance(this.mesh, this.geomIds, TOWER_TOP_MESH, localPos.x, baseY, localPos.z, roadAngle, 1, tile.level, biomeVal)
         if (topId !== -1) this.buildings.push({ tile, meshName: TOWER_TOP_MESH, instanceId: topId, rotationY: roadAngle })
       }
     }
@@ -418,7 +425,7 @@ export class Decorations {
 
       let meshName = weightedPick(BuildingDefs)
       if (rerollIfUnique(meshName)) meshName = weightedPick(BuildingDefs)
-      const instanceId = this._placeInstance(this.mesh, this.geomIds, meshName, localPos.x + jitterOx, baseY, localPos.z + jitterOz, jitterAngle, 1, tile.level)
+      const instanceId = this._placeInstance(this.mesh, this.geomIds, meshName, localPos.x + jitterOx, baseY, localPos.z + jitterOz, jitterAngle, 1, tile.level, biomeVal)
       if (instanceId === -1) break
       trackUnique(meshName)
       this.buildings.push({ tile, meshName, instanceId, rotationY: jitterAngle })
@@ -426,7 +433,7 @@ export class Decorations {
 
       // Optionally place tower top (same jitter as base)
       if (meshName === 'building_tower_A_yellow' && random() < TOWER_TOP_CHANCE) {
-        const topId = this._placeInstance(this.mesh, this.geomIds, TOWER_TOP_MESH, localPos.x + jitterOx, baseY, localPos.z + jitterOz, jitterAngle, 1, tile.level)
+        const topId = this._placeInstance(this.mesh, this.geomIds, TOWER_TOP_MESH, localPos.x + jitterOx, baseY, localPos.z + jitterOz, jitterAngle, 1, tile.level, biomeVal)
         if (topId !== -1) this.buildings.push({ tile, meshName: TOWER_TOP_MESH, instanceId: topId, rotationY: jitterAngle })
       }
     }
@@ -444,7 +451,7 @@ export class Decorations {
         const baseY = tile.level * LEVEL_HEIGHT + TILE_SURFACE
 
         // Place windmill base
-        const baseInstanceId = this._placeInstance(this.mesh, this.geomIds, 'building_windmill_yellow', localPos.x, baseY, localPos.z, waterAngle, 1, tile.level)
+        const baseInstanceId = this._placeInstance(this.mesh, this.geomIds, 'building_windmill_yellow', localPos.x, baseY, localPos.z, waterAngle, 1, tile.level, biomeVal)
         if (baseInstanceId === -1) break
         this.buildings.push({ tile, meshName: 'building_windmill_yellow', instanceId: baseInstanceId, rotationY: waterAngle, oy: 0 })
         buildingTileIds.add(tile.id)
@@ -453,7 +460,7 @@ export class Decorations {
         const cosA = Math.cos(waterAngle), sinA = Math.sin(waterAngle)
         const topOx = WINDMILL_TOP_OFFSET.x * cosA + WINDMILL_TOP_OFFSET.z * sinA
         const topOz = -WINDMILL_TOP_OFFSET.x * sinA + WINDMILL_TOP_OFFSET.z * cosA
-        const topInstanceId = this._placeInstance(this.mesh, this.geomIds, 'building_windmill_top_yellow', localPos.x + topOx, baseY + WINDMILL_TOP_OFFSET.y, localPos.z + topOz, waterAngle, 1, tile.level)
+        const topInstanceId = this._placeInstance(this.mesh, this.geomIds, 'building_windmill_top_yellow', localPos.x + topOx, baseY + WINDMILL_TOP_OFFSET.y, localPos.z + topOz, waterAngle, 1, tile.level, biomeVal)
         if (topInstanceId === -1) break
         this.buildings.push({ tile, meshName: 'building_windmill_top_yellow', instanceId: topInstanceId, rotationY: waterAngle, oy: WINDMILL_TOP_OFFSET.y })
 
@@ -463,7 +470,7 @@ export class Decorations {
         const fanX = localPos.x + fanOx
         const fanY = baseY + WINDMILL_FAN_OFFSET.y
         const fanZ = localPos.z + fanOz
-        const fanInstanceId = this._placeInstance(this.mesh, this.geomIds, 'building_windmill_top_fan_yellow', fanX, fanY, fanZ, waterAngle, 1, tile.level)
+        const fanInstanceId = this._placeInstance(this.mesh, this.geomIds, 'building_windmill_top_fan_yellow', fanX, fanY, fanZ, waterAngle, 1, tile.level, biomeVal)
         if (fanInstanceId === -1) break
         this.buildings.push({ tile, meshName: 'building_windmill_top_fan_yellow', instanceId: fanInstanceId, rotationY: waterAngle, oy: WINDMILL_FAN_OFFSET.y, oz: fanOz, ox: fanOx })
         const fan = { tile, instanceId: fanInstanceId, x: fanX, y: fanY, z: fanZ, baseRotationY: waterAngle, spin: { angle: 0 } }
@@ -514,7 +521,7 @@ export class Decorations {
         const localPos = HexTileGeometry.getWorldPosition(tile.gridX - gridRadius, tile.gridZ - gridRadius)
         const baseY = tile.level * LEVEL_HEIGHT + TILE_SURFACE
         const meshName = weightedPick(CoastBuildingDefs)
-        const instanceId = this._placeInstance(this.mesh, this.geomIds, meshName, localPos.x, baseY, localPos.z, waterAngle, 1, tile.level)
+        const instanceId = this._placeInstance(this.mesh, this.geomIds, meshName, localPos.x, baseY, localPos.z, waterAngle, 1, tile.level, biomeVal)
         if (instanceId !== -1) {
           this.buildings.push({ tile, meshName, instanceId, rotationY: waterAngle })
           buildingTileIds.add(tile.id)
@@ -540,7 +547,7 @@ export class Decorations {
         const localPos = HexTileGeometry.getWorldPosition(tile.gridX - gridRadius, tile.gridZ - gridRadius)
         const baseY = tile.level * LEVEL_HEIGHT + TILE_SURFACE
         const rotationY = random() * Math.PI * 2
-        const instanceId = this._placeInstance(this.mesh, this.geomIds, meshName, localPos.x, baseY, localPos.z, rotationY, 1, tile.level)
+        const instanceId = this._placeInstance(this.mesh, this.geomIds, meshName, localPos.x, baseY, localPos.z, rotationY, 1, tile.level, biomeVal)
         if (instanceId !== -1) {
           this.buildings.push({ tile, meshName, instanceId, rotationY })
         }
@@ -553,6 +560,8 @@ export class Decorations {
     this.clearBridges()
 
     if (!this.mesh || this.geomIds.size === 0) return
+    const grid = this.scene.userData.hexGrid
+    const biomeVal = grid?.biome === 'winter' ? 0.5 : (grid?.biome === 'wasteland' ? 1.0 : 0.0)
 
     for (const tile of hexTiles) {
       // Only river crossing tiles
@@ -568,7 +577,7 @@ export class Decorations {
         tile.gridX - gridRadius,
         tile.gridZ - gridRadius
       )
-      const instanceId = this._placeInstance(this.mesh, this.geomIds, meshName, localPos.x, tile.level * LEVEL_HEIGHT, localPos.z, -tile.rotation * Math.PI / 3, 1, tile.level)
+      const instanceId = this._placeInstance(this.mesh, this.geomIds, meshName, localPos.x, tile.level * LEVEL_HEIGHT, localPos.z, -tile.rotation * Math.PI / 3, 1, tile.level, biomeVal)
       if (instanceId === -1) continue
       this.bridges.push({ tile, meshName, instanceId })
     }
@@ -578,6 +587,8 @@ export class Decorations {
     this.clearWaterlilies()
 
     if (!this.mesh || this.geomIds.size === 0) return
+    const grid = this.scene.userData.hexGrid
+    const biomeVal = grid?.biome === 'winter' ? 0.5 : (grid?.biome === 'wasteland' ? 1.0 : 0.0)
 
     const lilyNames = WaterlilyMeshNames.filter(n => this.geomIds.has(n))
 
@@ -612,7 +623,7 @@ export class Decorations {
         oz = (random() - 0.5) * 0.3
       }
       const rotationY = random() * Math.PI * 2
-      const instanceId = this._placeInstance(this.mesh, this.geomIds, meshName, localPos.x + ox, tile.level * LEVEL_HEIGHT + TILE_SURFACE - 0.2, localPos.z + oz, rotationY, 2, tile.level)
+      const instanceId = this._placeInstance(this.mesh, this.geomIds, meshName, localPos.x + ox, tile.level * LEVEL_HEIGHT + TILE_SURFACE - 0.2, localPos.z + oz, rotationY, 2, tile.level, biomeVal)
       if (instanceId === -1) break
       this.waterlilies.push({ tile, meshName, instanceId, rotationY, ox, oz })
     }
@@ -622,6 +633,8 @@ export class Decorations {
     this.clearFlowers()
 
     if (!this.mesh || this.geomIds.size === 0) return
+    const grid = this.scene.userData.hexGrid
+    const biomeVal = grid?.biome === 'winter' ? 0.5 : (grid?.biome === 'wasteland' ? 1.0 : 0.0)
 
     const flowerNames = FlowerMeshNames.filter(n => this.geomIds.has(n))
     const { x: offsetX, z: offsetZ } = this.worldOffset
@@ -667,7 +680,7 @@ export class Decorations {
         const oz = (random() - 0.5) * 1.6
         const rotationY = random() * Math.PI * 2
         const scale = meshName.startsWith('bush_') ? 1 : 2
-        const instanceId = this._placeInstance(this.mesh, this.geomIds, meshName, localPos.x + ox, tile.level * LEVEL_HEIGHT + TILE_SURFACE, localPos.z + oz, rotationY, scale, tile.level)
+        const instanceId = this._placeInstance(this.mesh, this.geomIds, meshName, localPos.x + ox, tile.level * LEVEL_HEIGHT + TILE_SURFACE, localPos.z + oz, rotationY, scale, tile.level, biomeVal)
         if (instanceId === -1) break
         this.flowers.push({ tile, meshName, instanceId, rotationY, ox, oz })
       }
@@ -678,6 +691,8 @@ export class Decorations {
     this.clearRocks()
 
     if (!this.mesh || this.geomIds.size === 0) return
+    const grid = this.scene.userData.hexGrid
+    const biomeVal = grid?.biome === 'winter' ? 0.5 : (grid?.biome === 'wasteland' ? 1.0 : 0.0)
 
     const rockNames = RockMeshNames.filter(n => this.geomIds.has(n))
     const treeTileIds = new Set(this.trees.map(t => t.tile.id))
@@ -717,7 +732,7 @@ export class Decorations {
         const rotationY = random() * Math.PI * 2
         const tileName = TILE_LIST[tile.type]?.name || ''
         const surfaceDip = tileName === 'WATER' ? -0.2 : (tileName.startsWith('COAST_') || tileName.startsWith('RIVER_')) ? -0.1 : 0
-        const instanceId = this._placeInstance(this.mesh, this.geomIds, meshName, localPos.x + ox, tile.level * LEVEL_HEIGHT + TILE_SURFACE + surfaceDip, localPos.z + oz, rotationY, 1, tile.level)
+        const instanceId = this._placeInstance(this.mesh, this.geomIds, meshName, localPos.x + ox, tile.level * LEVEL_HEIGHT + TILE_SURFACE + surfaceDip, localPos.z + oz, rotationY, 1, tile.level, biomeVal)
         if (instanceId === -1) break
         this.rocks.push({ tile, meshName, instanceId, rotationY, ox, oz })
       }
@@ -734,6 +749,8 @@ export class Decorations {
     const hasMountains = this.mesh && mountainNames.length > 0
 
     if (!hasHills && !hasMountains) return
+    const grid = this.scene.userData.hexGrid
+    const biomeVal = grid?.biome === 'winter' ? 0.5 : (grid?.biome === 'wasteland' ? 1.0 : 0.0)
 
     const buildingTileIds = new Set(this.buildings.map(b => b.tile.id))
     const treeTileIds = new Set(this.trees.map(t => t.tile.id))
@@ -766,7 +783,7 @@ export class Decorations {
         if (this.mountains.length >= MAX_MOUNTAINS - 1) continue
         const meshName = weightedPick(MountainDefs)
         const mtRotY = Math.floor(random() * 6) * Math.PI / 3
-        const instanceId = this._placeInstance(this.mesh, this.geomIds, meshName, localPos.x, baseY, localPos.z, mtRotY, 1, tile.level)
+        const instanceId = this._placeInstance(this.mesh, this.geomIds, meshName, localPos.x, baseY, localPos.z, mtRotY, 1, tile.level, biomeVal)
         if (instanceId === -1) continue
         this.mountains.push({ tile, meshName, instanceId, rotationY: mtRotY })
         continue
@@ -776,7 +793,7 @@ export class Decorations {
       if (isRiverEnd && hasHills) {
         if (this.hills.length >= MAX_HILLS - 1) continue
         const meshName = weightedPick(RiverEndDefs)
-        const instanceId = this._placeInstance(this.mesh, this.geomIds, meshName, localPos.x, baseY - 0.1, localPos.z, rotationY, 1, tile.level)
+        const instanceId = this._placeInstance(this.mesh, this.geomIds, meshName, localPos.x, baseY - 0.1, localPos.z, rotationY, 1, tile.level, biomeVal)
         if (instanceId === -1) continue
         this.hills.push({ tile, meshName, instanceId, rotationY })
         continue
@@ -786,13 +803,13 @@ export class Decorations {
         if (this.mountains.length >= MAX_MOUNTAINS - 1) continue
         const meshName = weightedPick(MountainDefs)
         const mtRotY = Math.floor(random() * 6) * Math.PI / 3
-        const instanceId = this._placeInstance(this.mesh, this.geomIds, meshName, localPos.x, baseY, localPos.z, mtRotY, 1, tile.level)
+        const instanceId = this._placeInstance(this.mesh, this.geomIds, meshName, localPos.x, baseY, localPos.z, mtRotY, 1, tile.level, biomeVal)
         if (instanceId === -1) continue
         this.mountains.push({ tile, meshName, instanceId, rotationY: mtRotY })
       } else if (def.levelIncrement === 1 && hasHills) {
         if (this.hills.length >= MAX_HILLS - 1) continue
         const meshName = weightedPick(HillDefs)
-        const instanceId = this._placeInstance(this.mesh, this.geomIds, meshName, localPos.x, baseY, localPos.z, rotationY, 1, tile.level)
+        const instanceId = this._placeInstance(this.mesh, this.geomIds, meshName, localPos.x, baseY, localPos.z, rotationY, 1, tile.level, biomeVal)
         if (instanceId === -1) continue
         this.hills.push({ tile, meshName, instanceId, rotationY })
       }
@@ -843,7 +860,9 @@ export class Decorations {
       tile.gridX - gridRadius,
       tile.gridZ - gridRadius
     )
-    const instanceId = this._placeInstance(this.mesh, this.geomIds, meshName, localPos.x, tile.level * LEVEL_HEIGHT, localPos.z, -tile.rotation * Math.PI / 3, 1, tile.level)
+    const grid = this.scene.userData.hexGrid
+    const biomeVal = grid?.biome === 'winter' ? 0.5 : (grid?.biome === 'wasteland' ? 1.0 : 0.0)
+    const instanceId = this._placeInstance(this.mesh, this.geomIds, meshName, localPos.x, tile.level * LEVEL_HEIGHT, localPos.z, -tile.rotation * Math.PI / 3, 1, tile.level, biomeVal)
     if (instanceId === -1) return
     this.bridges.push({ tile, meshName, instanceId })
   }
@@ -864,7 +883,9 @@ export class Decorations {
     )
     const baseY = tile.level * LEVEL_HEIGHT + TILE_SURFACE
     const rotY = Math.floor(random() * 6) * Math.PI / 3
-    const instanceId = this._placeInstance(this.mesh, this.geomIds, meshName, localPos.x, baseY, localPos.z, rotY, 1, tile.level)
+    const grid = this.scene.userData.hexGrid
+    const biomeVal = grid?.biome === 'winter' ? 0.5 : (grid?.biome === 'wasteland' ? 1.0 : 0.0)
+    const instanceId = this._placeInstance(this.mesh, this.geomIds, meshName, localPos.x, baseY, localPos.z, rotY, 1, tile.level, biomeVal)
     if (instanceId === -1) return
     this.mountains.push({ tile, meshName, instanceId, rotationY: rotY })
   }
@@ -882,6 +903,8 @@ export class Decorations {
     }
 
     const { x: offsetX, z: offsetZ } = this.worldOffset
+    const grid = this.scene.userData.hexGrid
+    const biomeVal = grid?.biome === 'winter' ? 0.5 : (grid?.biome === 'wasteland' ? 1.0 : 0.0)
     const newItems = []
     const buildingTileIds = new Set()
     const buildingThreshold = getBuildingThreshold()
@@ -903,14 +926,14 @@ export class Decorations {
         if (deadEndInfo.isDeadEnd) {
           const buildingAngle = dirToAngle[deadEndInfo.exitDir] ?? 0
           const meshName = weightedPick(BuildingDefs)
-          const instanceId = this._placeInstance(this.mesh, this.geomIds, meshName, localPos.x, tile.level * LEVEL_HEIGHT + TILE_SURFACE, localPos.z, buildingAngle, 1, tile.level)
+          const instanceId = this._placeInstance(this.mesh, this.geomIds, meshName, localPos.x, tile.level * LEVEL_HEIGHT + TILE_SURFACE, localPos.z, buildingAngle, 1, tile.level, biomeVal)
           if (instanceId !== -1) {
             this.buildings.push({ tile, meshName, instanceId, rotationY: buildingAngle })
             newItems.push({ mesh: this.mesh, instanceId, x: localPos.x, y: tile.level * LEVEL_HEIGHT + TILE_SURFACE, z: localPos.z, rotationY: buildingAngle })
             buildingTileIds.add(tile.id)
 
             if (meshName === 'building_tower_A_yellow' && random() < TOWER_TOP_CHANCE) {
-              const topId = this._placeInstance(this.mesh, this.geomIds, TOWER_TOP_MESH, localPos.x, tile.level * LEVEL_HEIGHT + TILE_SURFACE, localPos.z, buildingAngle, 1, tile.level)
+              const topId = this._placeInstance(this.mesh, this.geomIds, TOWER_TOP_MESH, localPos.x, tile.level * LEVEL_HEIGHT + TILE_SURFACE, localPos.z, buildingAngle, 1, tile.level, biomeVal)
               if (topId !== -1) {
                 this.buildings.push({ tile, meshName: TOWER_TOP_MESH, instanceId: topId, rotationY: buildingAngle })
                 newItems.push({ mesh: this.mesh, instanceId: topId, x: localPos.x, y: tile.level * LEVEL_HEIGHT + TILE_SURFACE, z: localPos.z, rotationY: buildingAngle })
@@ -927,14 +950,14 @@ export class Decorations {
             const jOz = (random() - 0.5) * 0.6
             const y = tile.level * LEVEL_HEIGHT + TILE_SURFACE
             const meshName = weightedPick(BuildingDefs)
-            const instanceId = this._placeInstance(this.mesh, this.geomIds, meshName, localPos.x + jOx, y, localPos.z + jOz, jitterAngle, 1, tile.level)
+            const instanceId = this._placeInstance(this.mesh, this.geomIds, meshName, localPos.x + jOx, y, localPos.z + jOz, jitterAngle, 1, tile.level, biomeVal)
             if (instanceId !== -1) {
               this.buildings.push({ tile, meshName, instanceId, rotationY: jitterAngle })
               newItems.push({ mesh: this.mesh, instanceId, x: localPos.x + jOx, y, z: localPos.z + jOz, rotationY: jitterAngle })
               buildingTileIds.add(tile.id)
 
               if (meshName === 'building_tower_A_yellow' && random() < TOWER_TOP_CHANCE) {
-                const topId = this._placeInstance(this.mesh, this.geomIds, TOWER_TOP_MESH, localPos.x + jOx, y, localPos.z + jOz, jitterAngle, 1, tile.level)
+                const topId = this._placeInstance(this.mesh, this.geomIds, TOWER_TOP_MESH, localPos.x + jOx, y, localPos.z + jOz, jitterAngle, 1, tile.level, biomeVal)
                 if (topId !== -1) {
                   this.buildings.push({ tile, meshName: TOWER_TOP_MESH, instanceId: topId, rotationY: jitterAngle })
                   newItems.push({ mesh: this.mesh, instanceId: topId, x: localPos.x + jOx, y, z: localPos.z + jOz, rotationY: jitterAngle })
@@ -972,7 +995,8 @@ export class Decorations {
             if (instanceId !== -1) {
               const rotY = random() * Math.PI * 2
               const c = levelColor(tile.level)
-              c.b = rotY / (Math.PI * 2)
+              c.g = biomeVal
+              c.b = 1.0
               this.mesh.setColorAt(instanceId, c)
               const ox = (random() - 0.5) * 0.2
               const oz = (random() - 0.5) * 0.2
@@ -1009,7 +1033,8 @@ export class Decorations {
           const geomId = this.geomIds.get(meshName)
           const instanceId = this._addInstance(this.mesh, geomId)
           if (instanceId !== -1) {
-            this.mesh.setColorAt(instanceId, levelColor(tile.level))
+            const cc = levelColor(tile.level); cc.g = biomeVal; cc.b = 1.0;
+            this.mesh.setColorAt(instanceId, cc)
             let ox, oz
             if (isCoastWater) {
               const localSide = (random() - 0.5) * 0.3
@@ -1055,7 +1080,8 @@ export class Decorations {
               if (geomId !== undefined) {
                 const instanceId = this._addInstance(this.mesh, geomId)
                 if (instanceId !== -1) {
-                  this.mesh.setColorAt(instanceId, levelColor(tile.level))
+                  const cc = levelColor(tile.level); cc.g = biomeVal; cc.b = 1.0;
+                  this.mesh.setColorAt(instanceId, cc)
                   const rotationY = Math.floor(random() * 6) * Math.PI / 3
                   const y = tile.level * LEVEL_HEIGHT + TILE_SURFACE - 0.1
                   this.dummy.position.set(localPos.x, y, localPos.z)
@@ -1075,7 +1101,8 @@ export class Decorations {
               const geomId = this.geomIds.get(meshName)
               const instanceId = this._addInstance(this.mesh, geomId)
               if (instanceId !== -1) {
-                this.mesh.setColorAt(instanceId, levelColor(tile.level))
+                const cc = levelColor(tile.level); cc.g = biomeVal; cc.b = 1.0;
+                this.mesh.setColorAt(instanceId, cc)
                 const rotationY = Math.floor(random() * 6) * Math.PI / 3
                 const y = tile.level * LEVEL_HEIGHT + TILE_SURFACE
                 this.dummy.position.set(localPos.x, y, localPos.z)
@@ -1099,7 +1126,8 @@ export class Decorations {
           const geomId = this.geomIds.get(meshName)
           const instanceId = this._addInstance(this.mesh, geomId)
           if (instanceId !== -1) {
-            this.mesh.setColorAt(instanceId, levelColor(tile.level))
+            const cc = levelColor(tile.level); cc.g = biomeVal; cc.b = 1.0;
+            this.mesh.setColorAt(instanceId, cc)
             const ox = (random() - 0.5) * 1.2
             const oz = (random() - 0.5) * 1.2
             const rotationY = random() * Math.PI * 2

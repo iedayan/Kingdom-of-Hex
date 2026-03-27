@@ -242,6 +242,9 @@ export class HexMapDebug {
     if (hm.interaction?.hoverFill) {
       overlays.push(hm.interaction.hoverFill)
     }
+    if (hm.interaction?.capitalMarker) {
+      overlays.push(hm.interaction.capitalMarker)
+    }
     // Fallback: check hexMap directly (before interaction is extracted)
     if (hm.hoverHighlight) {
       overlays.push(hm.hoverHighlight)

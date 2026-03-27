@@ -3,12 +3,15 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Hex Map Toy</title>
+    <title>Kingdom of Hex</title>
     <link rel="icon" href="./favicon.ico">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,600;1,9..144,400&family=Inter:wght@400;500&family=Sora:wght@400;500;600&display=swap" rel="stylesheet">
     <style>
+      :root {
+        cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m3 3 7.07 16.97 2.51-7.39 7.39-2.51L3 3z'%3E%3C/path%3E%3Cpath d='m13 13 6 6'%3E%3C/path%3E%3C/svg%3E"), auto;
+      }
       * {
         box-sizing: border-box;
       }
@@ -21,6 +24,7 @@
         position: fixed;
         top: 0;
         left: 0;
+        z-index: 0;
         width: 100%;
         height: 100%;
         /* Disable long-press context menu and haptic feedback on mobile */
@@ -48,47 +52,70 @@
       @media (orientation: portrait) {
         #ui-menu { flex-direction: column !important; }
       }
+      /* Subtle edge darkening + depth; pointer-events none so HUD/canvas input unchanged */
+      #hx-viewport-vignette {
+        position: fixed;
+        inset: 0;
+        z-index: 1;
+        pointer-events: none;
+        display: none;
+      }
       #title-overlay {
         position: fixed;
         top: 10px;
         left: 10px;
         z-index: 1000;
         font-family: 'Inter', sans-serif;
-        font-size: 14px;
-        color: rgba(255,255,255,0.8);
-        text-shadow: 0 1px 3px rgba(0,0,0,0.48);
-      }
-      #title-overlay .title-row {
-        display: flex;
-        align-items: baseline;
-        gap: 10px;
-      }
-      #title-overlay .title {
-        font-weight: 500;
+        font-size: 11px;
+        color: rgba(255,255,255,0.5);
+        pointer-events: none;
       }
       #title-overlay a {
-        color: rgba(255,255,255,0.8);
-        text-decoration: underline;
+        color: rgba(255,255,255,0.5);
+        text-decoration: none;
       }
       #status-text {
-        margin-top: 8px;
         pointer-events: none;
       }
     </style>
   </head>
   <body>
     <div id="title-overlay">
-      <div class="title-row">
-        <div class="title">Hex Map Toy</div>
-        <a href="https://felixturner.github.io/hex-map-wfc/article/" target="_blank">Read Article</a>
-        <a href="https://github.com/felixturner/hex-map-wfc" target="_blank">Source</a>
-      </div>
       <div id="status-text"></div>
     </div>
     <div id="loading">
       <img src="assets/loader.gif" alt="Loading" id="loader-gif" />
     </div>
+    
+    <!-- WebGPU Fallback UI -->
+    <div id="webgpu-error" style="display:none; position:fixed; inset:0; z-index:5000; background:linear-gradient(135deg, #0a0a12 0%, #1a1a2e 100%); flex-direction:column; align-items:center; justify-content:center; text-align:center; padding:2rem; font-family:system-ui,sans-serif;">
+      <div style="font-size:80px; margin-bottom:1rem;">🏰</div>
+      <h1 style="color:#4ecdc4; font-size:2.5rem; margin:0 0 0.5rem;">Kingdom of Hex</h1>
+      <h2 style="color:#ff6b6b; font-size:1.5rem; margin:0 0 1.5rem; font-weight:500;">Browser Not Supported</h2>
+      <p style="color:#ccc; max-width:480px; line-height:1.6; margin:0 0 2rem;">
+        This game requires <strong style="color:#4ecdc4;">WebGPU</strong> technology for 3D graphics. 
+        Your browser doesn't support it yet.
+      </p>
+      <div style="background:rgba(255,255,255,0.05); border-radius:12px; padding:1.5rem; max-width:400px; margin-bottom:2rem;">
+        <h3 style="color:#ffd93d; margin:0 0 1rem; font-size:1rem;">Recommended Browsers:</h3>
+        <div style="display:flex; gap:1rem; justify-content:center; flex-wrap:wrap;">
+          <a href="https://www.google.com/chrome/" target="_blank" style="color:#4ecdc4; text-decoration:none; padding:0.5rem 1rem; background:rgba(78,205,196,0.1); border-radius:8px;">
+            Chrome 113+
+          </a>
+          <a href="https://www.microsoft.com/edge" target="_blank" style="color:#4ecdc4; text-decoration:none; padding:0.5rem 1rem; background:rgba(78,205,196,0.1); border-radius:8px;">
+            Edge 113+
+          </a>
+          <a href="https://www.apple.com/safari/" target="_blank" style="color:#4ecdc4; text-decoration:none; padding:0.5rem 1rem; background:rgba(78,205,196,0.1); border-radius:8px;">
+            Safari 17+
+          </a>
+        </div>
+      </div>
+      <p style="color:#666; font-size:0.85rem; margin:0;">
+        WebGPU provides better graphics performance for procedural worlds.
+      </p>
+    </div>
     <canvas id="canvas"></canvas>
+    <div id="hx-viewport-vignette" aria-hidden="true"></div>
     <script type="module" src="/src/main.js"></script>
   </body>
 </html>

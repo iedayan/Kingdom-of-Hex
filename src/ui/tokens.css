@@ -1,0 +1,764 @@
+/**
+ * HexGame UI design tokens — "Obsidian charter"
+ * Import from main.js. Use var(--hx-*) in inline styles or combine with .hx-* helpers.
+ */
+
+:root {
+  /* ─── Color: void & surfaces ─── */
+  --hx-bg-void: #0a0b10;
+  --hx-bg-elevated: rgba(18, 20, 28, 0.72);
+  --hx-bg-elevated-solid: #12141c;
+  --hx-bg-hover: rgba(255, 255, 255, 0.06);
+  --hx-bg-active: rgba(255, 255, 255, 0.12);
+
+  --hx-border-subtle: rgba(255, 255, 255, 0.1);
+  --hx-border-strong: rgba(255, 255, 255, 0.18);
+  --hx-divider: rgba(255, 255, 255, 0.08);
+
+  /* ─── Text ─── */
+  --hx-text-primary: rgba(255, 255, 255, 0.92);
+  --hx-text-secondary: rgba(255, 255, 255, 0.72);
+  --hx-text-muted: rgba(255, 255, 255, 0.58);
+  --hx-text-faint: rgba(255, 255, 255, 0.38);
+
+  /* ─── Accents ─── */
+  --hx-accent-gold: #d4a574;
+  --hx-accent-gold-hover: #e0b68a;
+  --hx-accent-gold-muted: #8a6a4a;
+  --hx-accent-gold-bg: rgba(212, 165, 116, 0.15);
+
+  --hx-accent-info: #7eb8b8;
+  --hx-accent-info-bg: rgba(126, 184, 184, 0.12);
+
+  --hx-danger: #c45c5c;
+  --hx-danger-bg: rgba(196, 92, 92, 0.15);
+
+  --hx-success: #6b9e7d;
+  --hx-success-bg: rgba(107, 158, 125, 0.12);
+
+  /* ─── Typography ─── */
+  --hx-font-ui: 'Sora', 'Inter', system-ui, sans-serif;
+  --hx-font-display: 'Fraunces', 'Georgia', serif;
+
+  --hx-text-xs: clamp(0.6875rem, 0.65rem + 0.2vw, 0.75rem);
+  --hx-text-sm: clamp(0.8125rem, 0.78rem + 0.25vw, 0.875rem);
+  --hx-text-base: clamp(0.875rem, 0.82rem + 0.3vw, 0.9375rem);
+  --hx-text-lg: clamp(1rem, 0.92rem + 0.4vw, 1.125rem);
+  --hx-text-xl: clamp(1.25rem, 1.1rem + 0.8vw, 1.75rem);
+
+  --hx-font-normal: 400;
+  --hx-font-medium: 500;
+  --hx-font-semibold: 600;
+
+  --hx-leading-tight: 1.25;
+  --hx-leading-body: 1.45;
+
+  /* ─── Spacing (4px grid) ─── */
+  --hx-space-1: 4px;
+  --hx-space-2: 8px;
+  --hx-space-3: 12px;
+  --hx-space-4: 16px;
+  --hx-space-5: 24px;
+  --hx-space-6: 32px;
+
+  /* ─── Radius ─── */
+  --hx-radius-sm: 8px;
+  --hx-radius-md: 12px;
+  --hx-radius-lg: 14px;
+  --hx-radius-pill: 999px;
+
+  /* ─── Glass ─── */
+  --hx-glass-blur: 16px;
+  --hx-glass-saturate: 1.15;
+
+  /* ─── Shadow (subtle; avoid heavy drops on dark UI) ─── */
+  --hx-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.35);
+  --hx-shadow-ring: 0 0 0 1px var(--hx-border-subtle);
+
+  /* ─── Motion ─── */
+  --hx-ease-out: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --hx-duration-fast: 140ms;
+  --hx-duration-normal: 200ms;
+  --hx-duration-slow: 260ms;
+
+  /* ─── Z-index scale (map canvas = 0) ─── */
+  --hx-z-hud: 1000;
+  --hx-z-sticky: 1100;
+  --hx-z-overlay: 1200;
+  /** Meta / chronicle gate — above gameplay HUD, below modals */
+  --hx-z-chronicle: 1250;
+  --hx-z-modal: 1300;
+  --hx-z-tooltip: 1400;
+  --hx-z-debug-gui: 9999;
+
+  /* ─── Touch / toolbar ─── */
+  --hx-touch-min: 44px;
+  --hx-strip-height: clamp(56px, 8vh, 72px);
+  --hx-toolbar-height: clamp(64px, 10vh, 88px);
+  /* Space above bottom dock for floating hints (place unit, etc.) */
+  --hx-hud-help-offset: clamp(108px, 20vh, 148px);
+  --hx-ui-scale: 1;
+}
+
+html {
+  font-size: calc(16px * var(--hx-ui-scale));
+}
+
+/* Chronicle / meta screen (blocks gameplay HUD until dismissed) */
+.hx-palace-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: var(--hx-z-chronicle);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  padding: max(var(--hx-space-5), env(safe-area-inset-top, 0px)) var(--hx-space-4)
+    max(var(--hx-space-5), env(safe-area-inset-bottom, 0px));
+  overflow-y: auto;
+  overflow-x: hidden;
+  -webkit-overflow-scrolling: touch;
+  text-align: center;
+  background: var(--hx-bg-void);
+  box-shadow: inset 0 0 120px rgba(0, 0, 0, 0.45);
+  pointer-events: auto;
+}
+
+.hx-palace-overlay__inner {
+  width: 100%;
+  max-width: 600px;
+  margin: auto 0;
+  flex-shrink: 0;
+  padding: var(--hx-space-4) 0;
+}
+
+.hx-palace-title {
+  font-family: var(--hx-font-display);
+  font-size: clamp(1.25rem, 3vw, 1.75rem);
+  color: var(--hx-accent-gold);
+  margin: 0 0 var(--hx-space-1);
+  line-height: 1.2;
+  letter-spacing: 0.05em;
+}
+
+.hx-palace-subtitle {
+  font-family: var(--hx-font-ui);
+  margin-bottom: var(--hx-space-3);
+  letter-spacing: 0.08em;
+  font-size: var(--hx-text-xs);
+  color: var(--hx-text-muted);
+}
+
+.hx-palace-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--hx-space-3);
+  width: 100%;
+  text-align: left;
+}
+
+@media (max-width: 720px) {
+  .hx-palace-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .hx-palace-overlay {
+    justify-content: flex-start;
+  }
+}
+
+/* Fixed HUD shells (GameHud) */
+.hx-hud-top {
+  position: fixed;
+  top: max(var(--hx-space-3), env(safe-area-inset-top, 0px));
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(calc(100vw - var(--hx-space-6)), 720px);
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--hx-space-2);
+  z-index: var(--hx-z-hud);
+  pointer-events: none;
+}
+
+.hx-hud-top .hx-panel {
+  pointer-events: auto;
+}
+
+.hx-hud-resource-row {
+  min-height: var(--hx-strip-height);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  padding: var(--hx-space-2) var(--hx-space-4);
+  gap: var(--hx-space-2) var(--hx-space-3);
+}
+
+.hx-hud-mission-block {
+  pointer-events: none;
+  text-align: center;
+  padding: 0 var(--hx-space-2) var(--hx-space-1);
+}
+
+.hx-hud-mission-block .hx-hud-mission-line {
+  font-size: var(--hx-text-xs);
+  color: var(--hx-text-muted);
+  line-height: var(--hx-leading-tight);
+  max-width: 36em;
+  margin: 0 auto;
+}
+
+.hx-hud-mission-block .hx-hud-turn-line {
+  font-family: var(--hx-font-ui);
+  font-size: var(--hx-text-sm);
+  font-weight: var(--hx-font-semibold);
+  color: var(--hx-accent-gold);
+  letter-spacing: 0.04em;
+  margin-top: var(--hx-space-1);
+}
+
+.hx-hud-research-status {
+  font-size: var(--hx-text-xs);
+  color: var(--hx-accent-info);
+  margin-top: var(--hx-space-1);
+  max-width: 36em;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.hx-hud-guidance {
+  font-size: var(--hx-text-xs);
+  color: var(--hx-text-faint);
+  margin-top: var(--hx-space-2);
+  max-width: 38em;
+  margin-left: auto;
+  margin-right: auto;
+  line-height: var(--hx-leading-tight);
+}
+
+.hx-hud-bottom-dock {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  padding: var(--hx-space-3) max(var(--hx-space-4), env(safe-area-inset-right, 0px))
+    max(var(--hx-space-3), env(safe-area-inset-bottom, 0px))
+    max(var(--hx-space-4), env(safe-area-inset-left, 0px));
+  z-index: var(--hx-z-hud);
+  pointer-events: none;
+  display: flex;
+  justify-content: center;
+  align-items: flex-end;
+}
+
+.hx-hud-bottom-dock__inner {
+  pointer-events: none;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: var(--hx-space-3);
+  width: 100%;
+  max-width: min(calc(100vw - var(--hx-space-4)), 1100px);
+}
+
+.hx-hud-bottom-dock__inner > * {
+  pointer-events: auto;
+}
+
+.hx-hud-action-bar-wrap {
+  flex: 1 1 auto;
+  min-width: min(100%, 280px);
+  max-width: min(calc(100vw - 200px), 920px);
+  display: flex;
+  justify-content: center;
+}
+
+.hx-hud-action-bar-wrap .hx-panel {
+  width: 100%;
+  max-width: 100%;
+}
+
+.hx-hud-end-turn {
+  flex: 0 0 auto;
+  min-height: 44px;
+  padding: 0 var(--hx-space-4);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --hx-duration-fast: 0.01ms;
+    --hx-duration-normal: 0.01ms;
+    --hx-duration-slow: 0.01ms;
+  }
+}
+
+body.hx-reduced-motion * {
+  animation-duration: 0.01ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.01ms !important;
+}
+
+body.hx-high-contrast {
+  --hx-bg-elevated: rgba(10, 12, 18, 0.95);
+  --hx-border-subtle: rgba(255, 255, 255, 0.26);
+  --hx-border-strong: rgba(255, 255, 255, 0.42);
+  --hx-text-primary: rgba(255, 255, 255, 1);
+  --hx-text-secondary: rgba(255, 255, 255, 0.9);
+  --hx-text-muted: rgba(255, 255, 255, 0.78);
+}
+
+/* ─── Base helpers (optional; scope under body.hex-game if needed) ─── */
+
+.hx-tabular {
+  font-variant-numeric: tabular-nums;
+}
+
+.hx-text-muted {
+  color: var(--hx-text-muted);
+}
+
+.hx-font-display {
+  font-family: var(--hx-font-display);
+}
+
+.hx-font-ui {
+  font-family: var(--hx-font-ui);
+}
+
+/* Panel: frosted strip / card */
+.hx-panel {
+  font-family: var(--hx-font-ui);
+  color: var(--hx-text-primary);
+  background: var(--hx-bg-elevated);
+  border: 1px solid var(--hx-border-subtle);
+  border-radius: var(--hx-radius-md);
+  box-shadow: var(--hx-shadow-ring);
+}
+
+.hx-panel--glass {
+  backdrop-filter: blur(var(--hx-glass-blur)) saturate(var(--hx-glass-saturate));
+  -webkit-backdrop-filter: blur(var(--hx-glass-blur)) saturate(var(--hx-glass-saturate));
+}
+
+/* Gameplay HUD strips — richer glass, gold rim, readable on map */
+.hx-hud-glass-panel {
+  background: linear-gradient(
+    165deg,
+    rgba(24, 26, 36, 0.92) 0%,
+    rgba(14, 16, 24, 0.88) 100%
+  );
+  border: 1px solid rgba(212, 165, 116, 0.22);
+  box-shadow:
+    0 8px 36px rgba(0, 0, 0, 0.42),
+    0 0 0 1px rgba(255, 255, 255, 0.06) inset,
+    0 1px 0 rgba(212, 165, 116, 0.11) inset;
+}
+
+/* Resource row chips: larger numerals + icons */
+.hx-chip--resource {
+  min-width: 4.5rem;
+}
+
+.hx-chip--resource svg {
+  width: 18px !important;
+  height: 18px !important;
+  opacity: 0.92 !important;
+  stroke-width: 2px;
+  color: var(--hx-text-secondary);
+  filter: drop-shadow(0 0 6px rgba(255, 255, 255, 0.12));
+}
+
+.hx-chip__abbr {
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.11em;
+  color: var(--hx-text-secondary) !important;
+}
+
+.hx-chip--resource .hx-chip__value {
+  margin-top: 1px;
+  font-size: var(--hx-text-base);
+  font-weight: 600;
+  color: var(--hx-text-primary);
+  letter-spacing: 0.02em;
+}
+
+.hx-hud-turn-counter {
+  font-size: var(--hx-text-base);
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  color: var(--hx-text-primary);
+  padding: 0 var(--hx-space-2);
+  white-space: nowrap;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
+}
+
+.hx-hud-seed {
+  font-size: var(--hx-text-xs);
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: var(--hx-text-secondary);
+  padding: 0 var(--hx-space-2);
+  white-space: nowrap;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
+  cursor: copy;
+  user-select: none;
+}
+
+/* Single caption under resource bar (no second glass card) */
+.hx-hud-mission-caption {
+  pointer-events: auto;
+  cursor: help;
+  display: inline-flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  align-items: baseline;
+  gap: 6px;
+  row-gap: 2px;
+  width: max-content;
+  max-width: min(40rem, 94vw);
+  padding: 2px var(--hx-space-3) 0;
+  text-align: center;
+  font-family: var(--hx-font-ui);
+  font-size: var(--hx-text-xs);
+  line-height: var(--hx-leading-tight);
+  color: var(--hx-text-muted);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.45);
+}
+
+.hx-hud-mission-caption__seat {
+  font-family: var(--hx-font-ui);
+  font-weight: 700;
+  font-size: var(--hx-text-sm);
+  color: var(--hx-accent-gold);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.hx-hud-mission-caption__coords {
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.06em;
+  color: var(--hx-text-secondary);
+}
+
+.hx-hud-mission-caption__sep {
+  color: var(--hx-text-faint);
+  user-select: none;
+  font-weight: var(--hx-font-normal);
+}
+
+.hx-hud-mission-caption__hint {
+  color: var(--hx-text-secondary);
+  font-size: var(--hx-text-xs);
+  font-weight: 500;
+}
+
+/* 3D label on crown hex (CSS2D) */
+.hx-capital-tag {
+  font-family: var(--hx-font-ui);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: var(--hx-accent-gold);
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.85);
+  padding: 3px 10px;
+  border-radius: var(--hx-radius-pill);
+  background: rgba(10, 11, 16, 0.82);
+  border: 1px solid rgba(212, 165, 116, 0.45);
+  box-shadow: 0 0 18px rgba(212, 165, 116, 0.18);
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.hx-capital-tag__crown {
+  display: inline-block;
+  margin-right: 5px;
+  opacity: 0.95;
+  color: var(--hx-accent-gold-hover);
+  text-shadow: 0 0 8px rgba(212, 165, 116, 0.55);
+}
+
+/* Buttons */
+.hx-btn {
+  font-family: var(--hx-font-ui);
+  font-size: var(--hx-text-sm);
+  font-weight: var(--hx-font-medium);
+  color: var(--hx-text-secondary);
+  background: transparent;
+  border: 1px solid var(--hx-border-subtle);
+  border-radius: var(--hx-radius-sm);
+  padding: var(--hx-space-2) var(--hx-space-3);
+  min-height: var(--hx-touch-min);
+  cursor: pointer;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
+  transition:
+    background var(--hx-duration-normal) var(--hx-ease-out),
+    border-color var(--hx-duration-normal) var(--hx-ease-out),
+    color var(--hx-duration-normal) var(--hx-ease-out);
+}
+
+.hx-btn:hover:not(:disabled) {
+  background: var(--hx-bg-hover);
+  border-color: var(--hx-border-strong);
+  color: var(--hx-text-primary);
+}
+
+/* Bottom dock: one horizontal rail; scroll region shrinks before the tail wraps */
+.hx-action-bar {
+  display: flex;
+  flex-flow: row nowrap;
+  align-items: stretch;
+  max-width: 100%;
+}
+
+/* Toolbar dock: clearer grid + hover ring */
+.hx-action-bar .hx-btn {
+  min-width: 4.1rem;
+  border-color: rgba(255, 255, 255, 0.12);
+  min-height: 34px;
+  padding: var(--hx-space-1) var(--hx-space-2);
+  font-size: 0.78rem;
+}
+
+.hx-action-bar .hx-btn b {
+  font-size: 0.8rem;
+}
+
+.hx-action-bar .hx-btn small {
+  font-size: 0.75rem;
+}
+
+.hx-action-bar .hx-btn:hover:not(:disabled) {
+  box-shadow: 0 0 0 1px rgba(212, 165, 116, 0.25);
+}
+
+.hx-action-bar .hx-btn svg {
+  opacity: 0.95;
+}
+
+.hx-action-bar__rail-divider {
+  align-self: stretch;
+  width: 1px;
+  flex-shrink: 0;
+  background: var(--hx-divider);
+  min-height: 2.125rem;
+}
+
+/* TECH + END TURN participate in the main rail (no nested flex row that can wrap alone). */
+.hx-action-bar__tail {
+  display: contents;
+}
+
+.hx-action-bar > .hx-btn {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  align-self: stretch;
+}
+
+/* Research / tech lab modal (must be column flex — not default row) */
+.hx-research-modal {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  padding: var(--hx-space-6);
+  padding-bottom: max(var(--hx-space-6), env(safe-area-inset-bottom, 0px));
+  z-index: var(--hx-z-modal);
+  width: min(calc(100vw - var(--hx-space-6)), 520px);
+  max-width: calc(100vw - var(--hx-space-6));
+  max-height: min(85vh, 720px);
+  box-sizing: border-box;
+  display: none;
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--hx-space-3);
+  overflow: hidden;
+}
+
+.hx-research-modal.is-open {
+  display: flex;
+}
+
+.hx-research-modal__title {
+  margin: 0;
+  flex-shrink: 0;
+  font-family: var(--hx-font-ui);
+  font-size: var(--hx-text-base);
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: #5eead4;
+}
+
+.hx-research-modal__science {
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  opacity: 0.88;
+}
+
+.hx-research-modal__empty {
+  margin: 0;
+  color: var(--hx-text-muted);
+  font-size: var(--hx-text-sm);
+}
+
+.hx-research-modal__options {
+  display: flex;
+  flex-direction: column;
+  gap: var(--hx-space-2);
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  padding-right: var(--hx-space-1);
+}
+
+.hx-research-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--hx-space-3);
+  flex-wrap: wrap;
+  padding: var(--hx-space-3);
+  border-radius: var(--hx-radius-md);
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--hx-border-subtle);
+}
+
+.hx-research-row--done {
+  border-color: rgba(52, 211, 153, 0.45);
+}
+
+.hx-research-row--active {
+  border-color: rgba(34, 211, 238, 0.5);
+}
+
+.hx-research-row__body {
+  flex: 1 1 12rem;
+  min-width: 0;
+  line-height: var(--hx-leading-body);
+  color: var(--hx-text-secondary);
+}
+
+.hx-research-row__body b {
+  display: block;
+  color: var(--hx-text-primary);
+  font-size: 0.9rem;
+}
+
+.hx-research-row__body small {
+  display: block;
+  margin-top: 4px;
+  font-size: var(--hx-text-xs);
+  opacity: 0.88;
+}
+
+.hx-research-row__action {
+  flex: 0 0 auto;
+}
+
+.hx-research-row__badge {
+  flex: 0 0 auto;
+  font-size: 1rem;
+  line-height: 1;
+  opacity: 0.9;
+  color: var(--hx-success);
+}
+
+.hx-research-modal__footer {
+  flex-shrink: 0;
+  display: flex;
+  justify-content: flex-end;
+  padding-top: var(--hx-space-2);
+  margin-top: auto;
+  border-top: 1px solid var(--hx-divider);
+}
+
+.hx-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.hx-btn--primary {
+  color: var(--hx-bg-void);
+  background: var(--hx-accent-gold);
+  border-color: rgba(212, 165, 116, 0.45);
+  font-weight: var(--hx-font-semibold);
+}
+
+.hx-btn--primary:hover:not(:disabled) {
+  background: var(--hx-accent-gold-hover);
+  border-color: var(--hx-accent-gold-hover);
+  color: var(--hx-bg-void);
+}
+
+.hx-btn--ghost {
+  border-color: transparent;
+}
+
+/* Resource / status chip */
+.hx-chip {
+  font-family: var(--hx-font-ui);
+  font-size: var(--hx-text-sm);
+  color: var(--hx-text-primary);
+  display: inline-flex;
+  align-items: center;
+  gap: var(--hx-space-2);
+  padding: var(--hx-space-2) var(--hx-space-3);
+  border-radius: var(--hx-radius-pill);
+  background: rgba(0, 0, 0, 0.2);
+  border: 1px solid var(--hx-border-subtle);
+}
+
+.hx-chip__value {
+  font-variant-numeric: tabular-nums;
+  font-weight: var(--hx-font-medium);
+}
+
+/* Keyboard focus (WCAG) */
+.hx-focusable:focus {
+  outline: none;
+}
+
+.hx-focusable:focus-visible {
+  outline: 2px solid var(--hx-accent-gold);
+  outline-offset: 2px;
+}
+
+/* Decorative corner tick (optional ornament) */
+.hx-corner-ticks {
+  position: relative;
+}
+
+.hx-corner-ticks::before,
+.hx-corner-ticks::after {
+  content: '';
+  position: absolute;
+  width: 6px;
+  height: 6px;
+  border-color: var(--hx-border-strong);
+  border-style: solid;
+  pointer-events: none;
+  opacity: 0.6;
+}
+
+.hx-corner-ticks::before {
+  top: -1px;
+  left: -1px;
+  border-width: 1px 0 0 1px;
+  border-radius: var(--hx-radius-sm) 0 0 0;
+}
+
+.hx-corner-ticks::after {
+  bottom: -1px;
+  right: -1px;
+  border-width: 0 1px 1px 0;
+  border-radius: 0 0 var(--hx-radius-sm) 0;
+}

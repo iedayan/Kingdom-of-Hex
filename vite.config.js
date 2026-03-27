@@ -21,6 +21,17 @@ export default defineConfig({
   },
   build: {
     target: 'esnext',
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          if (!id.includes('node_modules')) return
+          if (id.includes('/three/')) return 'vendor-three'
+          if (id.includes('/gsap/')) return 'vendor-gsap'
+          if (id.includes('/zod/')) return 'vendor-zod'
+          return 'vendor'
+        },
+      },
+    },
   },
   esbuild: {
     target: 'esnext',

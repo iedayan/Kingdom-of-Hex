@@ -10,10 +10,7 @@ import {
   select,
   mix,
   float,
-  vec2,
   vec3,
-  vec4,
-  sub,
   texture,
   blendOverlay,
 } from 'three/tsl'
@@ -29,64 +26,72 @@ export class PostFX {
 
     this.postProcessing = new RenderPipeline(renderer)
 
-    // Effect toggle uniforms
     this.aoEnabled = uniform(1)
-    this.vignetteEnabled = uniform(1)
+    this.vignetteEnabled = uniform(0)
     this.dofEnabled = uniform(0)
-
     this.grainEnabled = uniform(0)
-
-    // Debug view: 0=final, 1=color, 2=depth, 3=normal, 4=AO, 5=overlay, 6=effects
     this.debugView = uniform(0)
-
-    // AO denoise parameters
     this.aoDenoiseRadius = uniform(5)
-
-    // DOF parameters
     this.dofFocus = uniform(100)
     this.dofFocalLength = uniform(50)
     this.dofBokehScale = uniform(1)
-
-    // Grain parameters
     this.grainStrength = uniform(0.1)
     this.grainTime = uniform(0)
-
-    // Fade to black (0 = black, 1 = fully visible)
+    this.grainFPS = uniform(0)
     this.fadeOpacity = uniform(1)
 
-    const dpr = Math.min(window.devicePixelRatio, 2)
-    const w = window.innerWidth * dpr
-    const h = window.innerHeight * dpr
+    this.width = 0
+    this.height = 0
+    this.aspectRatio = 1
+    this._updateDimensions()
 
-    // Overlay render target (UI elements — no depth test, no AO)
-    this.overlayTarget = new RenderTarget(w, h, { samples: 1 })
-    this.overlayTarget.texture.format = RGBAFormat
+    this.overlayTarget = null
+    this.waterTarget = null
+    this.waterMaskTarget = null
+    this._createRenderTargets()
 
-    // Water render target (water planes — masked to water areas)
-    this.waterTarget = new RenderTarget(w, h, { samples: 1 })
-    this.waterTarget.texture.format = RGBAFormat
-
-    // Water mask render target (tiles rendered with B&W water-mask.png texture)
-    const mw = Math.ceil(w / 4), mh = Math.ceil(h / 4)
-    this.waterMaskTarget = new RenderTarget(mw, mh, { samples: 1 })
-    this.waterMaskTarget.texture.format = RGBAFormat
-
-    // Object lists (set externally each frame)
     this.overlayObjects = []
     this.waterObjects = []
     this.waterMaskObjects = []
 
-    // Callback to enable/disable water mask mode on tile materials
+    this.overlaySet = new Set()
+    this.waterSet = new Set()
+    this.waterMaskSet = new Set()
+
     this.onWaterMaskRender = null
 
+    this._lastGrainUpdate = 0
 
     this._buildPipeline()
+  }
+
+  _updateDimensions() {
+    const dpr = Math.min(window.devicePixelRatio, 2)
+    this.width = window.innerWidth * dpr
+    this.height = window.innerHeight * dpr
+    this.aspectRatio = this.width / this.height
+  }
+
+  _createRenderTargets() {
+    if (this.overlayTarget) this.overlayTarget.dispose()
+    if (this.waterTarget) this.waterTarget.dispose()
+    if (this.waterMaskTarget) this.waterMaskTarget.dispose()
+
+    this.overlayTarget = new RenderTarget(this.width, this.height, { samples: 1 })
+    this.overlayTarget.texture.format = RGBAFormat
+
+    this.waterTarget = new RenderTarget(this.width, this.height, { samples: 1 })
+    this.waterTarget.texture.format = RGBAFormat
+
+    const mw = Math.ceil(this.width / 4)
+    const mh = Math.ceil(this.height / 4)
+    this.waterMaskTarget = new RenderTarget(mw, mh, { samples: 1 })
+    this.waterMaskTarget.texture.format = RGBAFormat
   }
 
   _buildPipeline() {
     const { scene, camera } = this
 
-    // Scene pass with MRT for normal output
     const scenePass = pass(scene, camera)
     scenePass.setMRT(
       mrt({
@@ -99,11 +104,9 @@ export class PostFX {
     const scenePassDepth = scenePass.getTextureNode('depth')
     const scenePassViewZ = scenePass.getViewZNode()
 
-    // ---- DOF (on scene color texture, before AO) ----
     const dofResult = dof(scenePassColor, scenePassViewZ, this.dofFocus, this.dofFocalLength, this.dofBokehScale)
     const afterDof = mix(scenePassColor, dofResult, this.dofEnabled)
 
-    // ---- GTAO pass (uses depth/normals from scene, not affected by DOF) ----
     this.aoPass = ao(scenePassDepth, scenePassNormal, camera)
     this.aoPass.resolutionScale = 0.5
     this.aoPass.distanceExponent.value = 1
@@ -112,53 +115,35 @@ export class PostFX {
     this.aoPass.scale.value = 1.5
     this.aoPass.thickness.value = 1
 
-    // AO texture for debug view
     const aoTexture = this.aoPass.getTextureNode()
-
-    // Denoise AO (edge-aware, no halo artifacts)
     this.aoDenoisePass = denoise(aoTexture, scenePassDepth, scenePassNormal, camera)
     this.aoDenoisePass.radius = this.aoDenoiseRadius
     const denoisedAO = this.aoDenoisePass.r
 
-    // Soften AO: raise to power < 1 to reduce harshness, then blend
-    const softenedAO = denoisedAO.pow(0.5) // Square root makes it softer
+    const softenedAO = denoisedAO.pow(0.5)
     const withAO = mix(afterDof, afterDof.mul(softenedAO), this.aoEnabled)
 
-    // ---- Water layer compositing (masked to water areas via mask RT) ----
     const waterMaskSample = texture(this.waterMaskTarget.texture)
     const waterMask = waterMaskSample.r.greaterThan(0.1).toFloat()
 
-    // Water RT: additive blend, masked to water areas
     const waterTexture = texture(this.waterTarget.texture)
     const waterAlpha = waterTexture.a.mul(waterMask)
     const withWater = withAO.add(waterTexture.rgb.mul(waterAlpha))
 
-    // ---- Overlay layer compositing (UI) ----
     const overlayTexture = texture(this.overlayTarget.texture)
     const withOverlay = withWater.add(overlayTexture.rgb.mul(overlayTexture.a))
 
-    // ---- Vignette: darken edges toward black ----
+    const uvCentered = viewportUV.sub(0.5)
+    const aspectCorrected = vec3(uvCentered.x.mul(Math.max(this.aspectRatio, 1)), uvCentered.y.div(Math.max(this.aspectRatio, 1)), 0)
     const vignetteFactor = float(1).sub(
-      clamp(viewportUV.sub(0.5).length().mul(1.4), 0.0, 1.0).pow(1.5)
+      clamp(aspectCorrected.length().mul(1.4), 0.0, 1.0).pow(1.5)
     )
     const vignetteMultiplier = mix(float(1), vignetteFactor, this.vignetteEnabled)
     const withVignette = mix(vec3(0, 0, 0), withOverlay.rgb, vignetteMultiplier)
 
-    // ---- Fade to black ----
     const fadeColor = vec3(0, 0, 0)
     const afterFade = mix(fadeColor, withVignette, this.fadeOpacity)
 
-    // ---- Grain: Worley noise for soft dot-like film grain ----
-    // Worley = distance to nearest random point → soft circular dots
-    // Monochrome (like real film grain), centered at 0 for additive blend
-    // // Perlin noise approach (kept for reference):
-    // const grainPos = vec3(viewportUV.mul(this.grainScale), this.grainTime.mul(this.grainSpeed))
-    // const grainNoise = mx_noise_vec3(grainPos).mul(this.grainStrength)
-    // ---- Grain: per-pixel RGB hash noise, FPS-throttled ----
-    // // Worley/Perlin approaches (kept for reference):
-    // const grainPos = vec3(viewportUV.mul(grainScale), grainTime.mul(grainSpeed))
-    // const grainNoise = mx_noise_vec3(grainPos).mul(grainStrength)
-    // const grainDots = float(1).sub(mx_worley_noise_float(grainPos)).sub(threshold).div(float(1).sub(threshold)).clamp(0,1)
     const grainSeed1 = viewportUV.x.mul(12.9898).add(viewportUV.y.mul(78.233)).add(this.grainTime)
     const grainSeed2 = viewportUV.x.mul(93.9898).add(viewportUV.y.mul(67.345)).add(this.grainTime)
     const grainSeed3 = viewportUV.x.mul(43.332).add(viewportUV.y.mul(93.532)).add(this.grainTime)
@@ -169,14 +154,12 @@ export class PostFX {
     const grainOverlay = blendOverlay(afterFade, grainRaw)
     const finalOutput = mix(afterFade, grainOverlay, this.grainEnabled.mul(this.grainStrength))
 
-    // Debug views
     const depthViz = vec3(scenePassDepth)
     const normalViz = scenePassNormal.mul(0.5).add(0.5)
     const aoViz = vec3(denoisedAO, denoisedAO, denoisedAO)
     const overlayViz = overlayTexture.rgb
     const waterMaskViz = vec3(waterMaskSample.r)
 
-    // Select output based on debug view
     const debugOutput = select(
       this.debugView.lessThan(0.5),
       finalOutput,
@@ -202,37 +185,54 @@ export class PostFX {
     this.postProcessing.outputNode = debugOutput
   }
 
-  // Rebuild pipeline with new camera (e.g., after camera switch)
   setCamera(camera) {
     this.camera = camera
     this._buildPipeline()
   }
 
-  /**
-   * Resize render targets
-   */
   resize() {
-    const dpr = Math.min(window.devicePixelRatio, 2)
-    const w = window.innerWidth * dpr
-    const h = window.innerHeight * dpr
-    this.overlayTarget.setSize(w, h)
-    this.waterTarget.setSize(w, h)
-    this.waterMaskTarget.setSize(Math.ceil(w / 4), Math.ceil(h / 4))
+    this._updateDimensions()
+    this._createRenderTargets()
+    this._buildPipeline()
   }
 
   setOverlayObjects(objects) {
     this.overlayObjects = objects
+    this.overlaySet = new Set(objects)
   }
 
   setWaterObjects(objects) {
     this.waterObjects = objects
+    this.waterSet = new Set(objects)
   }
 
   setWaterMaskObjects(objects) {
     this.waterMaskObjects = objects
+    this.waterMaskSet = new Set(objects)
+  }
+
+  _updateGrainTime() {
+    const fps = this.grainFPS.value
+    const now = performance.now() * 0.001
+
+    if (fps <= 0) {
+      this.grainTime.value = now
+      this._lastGrainUpdate = now
+      return
+    }
+
+    const interval = 1 / fps
+    const delta = now - this._lastGrainUpdate
+
+    if (delta >= interval) {
+      this.grainTime.value = now
+      this._lastGrainUpdate = now
+    }
   }
 
   render() {
+    this._updateGrainTime()
+
     const { renderer, scene, camera, overlayObjects, overlayTarget } = this
 
     const savedClearColor = renderer.getClearColor(new Color())
@@ -240,7 +240,6 @@ export class PostFX {
     const savedBackground = scene.background
     const savedEnvironment = scene.environment
 
-    // ---- Water mask pass: render tiles with unlit B&W mask material ----
     scene.background = null
     scene.environment = null
 
@@ -257,8 +256,9 @@ export class PostFX {
       scene.traverse((child) => {
         if (!child.isMesh && !child.isBatchedMesh && !child.isInstancedMesh &&
             !child.isLine && !child.isLineSegments && !child.isPoints) return
-        const isMaskObj = this.waterMaskObjects.some(o => o === child || o.getObjectById?.(child.id))
-        if (!isMaskObj) {
+        const isIncluded = this.waterMaskSet.has(child) ||
+          (child.parent && this.waterMaskSet.has(child.parent))
+        if (!isIncluded) {
           savedMaskVis.set(child, child.visible)
           child.visible = false
         }
@@ -270,10 +270,7 @@ export class PostFX {
     }
 
     renderer.autoClear = savedAutoClear
-
     this.onWaterMaskRender?.(false)
-
-    // ---- Overlay pass ----
 
     renderer.setRenderTarget(overlayTarget)
     renderer.setClearColor(0x000000, 0)
@@ -282,8 +279,9 @@ export class PostFX {
     const savedVisibility = new Map()
     scene.traverse((child) => {
       if (!child.isMesh && !child.isLine && !child.isLineSegments && !child.isPoints) return
-      const isOverlay = overlayObjects.some(o => o === child || o.getObjectById?.(child.id))
-      if (!isOverlay) {
+      const isIncluded = this.overlaySet.has(child) ||
+        (child.parent && this.overlaySet.has(child.parent))
+      if (!isIncluded) {
         savedVisibility.set(child, child.visible)
         child.visible = false
       }
@@ -295,7 +293,6 @@ export class PostFX {
       obj.visible = visible
     }
 
-    // ---- Water pass: render water planes to separate RT ----
     const { waterObjects, waterTarget } = this
     renderer.setRenderTarget(waterTarget)
     renderer.setClearColor(0x000000, 0)
@@ -305,8 +302,9 @@ export class PostFX {
       const savedWaterVis = new Map()
       scene.traverse((child) => {
         if (!child.isMesh && !child.isLine && !child.isLineSegments && !child.isPoints) return
-        const isWater = waterObjects.some(o => o === child || o.getObjectById?.(child.id))
-        if (!isWater) {
+        const isIncluded = this.waterSet.has(child) ||
+          (child.parent && this.waterSet.has(child.parent))
+        if (!isIncluded) {
           savedWaterVis.set(child, child.visible)
           child.visible = false
         }
@@ -322,7 +320,6 @@ export class PostFX {
     renderer.setRenderTarget(null)
     renderer.setClearColor(savedClearColor, savedClearAlpha)
 
-    // ---- Main pass: hide overlay + water, render with AO ----
     const savedMainVis = new Map()
     for (const obj of waterObjects) {
       savedMainVis.set(obj, obj.visible)
@@ -338,5 +335,23 @@ export class PostFX {
     for (const [obj, visible] of savedMainVis) {
       obj.visible = visible
     }
+  }
+
+  dispose() {
+    if (this.overlayTarget) {
+      this.overlayTarget.dispose()
+      this.overlayTarget = null
+    }
+    if (this.waterTarget) {
+      this.waterTarget.dispose()
+      this.waterTarget = null
+    }
+    if (this.waterMaskTarget) {
+      this.waterMaskTarget.dispose()
+      this.waterMaskTarget = null
+    }
+    if (this.aoPass?.dispose) this.aoPass.dispose()
+    if (this.aoDenoisePass?.dispose) this.aoDenoisePass.dispose()
+    if (this.postProcessing?.dispose) this.postProcessing.dispose()
   }
 }

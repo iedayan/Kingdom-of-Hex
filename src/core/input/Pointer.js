@@ -3,6 +3,14 @@ import { uniform } from 'three/tsl'
 
 const CLICK_THRESHOLD = 5 // Max pixels between pointerdown and pointerup to count as a click
 
+export function toNdc(clientX, clientY, rect) {
+  const safeWidth = Math.max(1, rect?.width || 1)
+  const safeHeight = Math.max(1, rect?.height || 1)
+  const x = ((clientX - (rect?.left || 0)) / safeWidth) * 2 - 1
+  const y = -((clientY - (rect?.top || 0)) / safeHeight) * 2 + 1
+  return { x, y }
+}
+
 /**
  * Helper class to handle pointer position and "down" with output exposed in vector3 and uniforms
  */
@@ -69,10 +77,9 @@ export class Pointer {
 
       if (isClick && this.onPointerDownCallback) {
         // Raycast using the pointerup position
-        this.pointer.set(
-          (e.clientX / window.innerWidth) * 2 - 1,
-          -(e.clientY / window.innerHeight) * 2 + 1
-        )
+        const rect = this.renderer.domElement.getBoundingClientRect()
+        const ndc = toNdc(e.clientX, e.clientY, rect)
+        this.pointer.set(ndc.x, ndc.y)
         this.rayCaster.setFromCamera(this.pointer, this.camera)
         const intersects = this.raycastTargets.length > 0
           ? this.rayCaster.intersectObjects(this.raycastTargets, false)
@@ -104,10 +111,9 @@ export class Pointer {
     if (e == null || e == undefined) {
       e = { clientX: this.clientPointer.x, clientY: this.clientPointer.y }
     }
-    this.pointer.set(
-      (e.clientX / window.innerWidth) * 2 - 1,
-      -(e.clientY / window.innerHeight) * 2 + 1
-    )
+    const rect = this.renderer.domElement.getBoundingClientRect()
+    const ndc = toNdc(e.clientX, e.clientY, rect)
+    this.pointer.set(ndc.x, ndc.y)
     this.rayCaster.setFromCamera(this.pointer, this.camera)
     this.rayCaster.ray.intersectPlane(this.iPlane, this.scenePointer)
     this.uPointer.value.x = this.scenePointer.x
@@ -126,10 +132,9 @@ export class Pointer {
 
     // Raycast for right-click detection
     if (this.raycastTargets.length > 0 && this.onRightClickCallback) {
-      this.pointer.set(
-        (e.clientX / window.innerWidth) * 2 - 1,
-        -(e.clientY / window.innerHeight) * 2 + 1
-      )
+      const rect = this.renderer.domElement.getBoundingClientRect()
+      const ndc = toNdc(e.clientX, e.clientY, rect)
+      this.pointer.set(ndc.x, ndc.y)
       this.rayCaster.setFromCamera(this.pointer, this.camera)
       const intersects = this.rayCaster.intersectObjects(this.raycastTargets, false)
       if (intersects.length > 0) {

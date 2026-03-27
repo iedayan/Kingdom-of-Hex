@@ -1,6 +1,76 @@
 import { GUI } from 'three/addons/libs/lil-gui.module.min.js'
 import { setTreeNoiseFrequency, setTreeThreshold, setBuildingNoiseFrequency, setBuildingThreshold } from './hexmap/Decorations.js'
 import { HexTile } from './hexmap/HexTiles.js'
+import { HexGrid } from './hexmap/HexGrid.js'
+import { log } from './core/logging/gameConsole.js'
+import { Sounds } from './core/audio/Sounds.js'
+
+/** Biome preset id → texture path (single source for defaults + GUI + applyParams). */
+export const BIOME_TEXTURE_BY_KEY = {
+  moody: './assets/textures/moody.png',
+  summer: './assets/textures/summer.png',
+  fall: './assets/textures/fall.png',
+  winter: './assets/textures/winter.png',
+  default: './assets/textures/default.png',
+}
+
+const DEBUG_VIEW_MAP = { final: 0, color: 1, normal: 3, ao: 4, overlay: 5, mask: 6 }
+
+const DEFAULT_CAMERA_POSITION = { x: 0.903, y: 100.036, z: 59.61 }
+const DEFAULT_CAMERA_TARGET = { x: 0.903, y: 1, z: 1.168 }
+
+const AUTO_BUILD_HEXES = [
+  [0, 0],
+  [0, -1],
+  [1, -1],
+  [1, 0],
+  [0, 1],
+  [-1, 0],
+  [-1, -1],
+  [-1, -2],
+  [0, -2],
+  [1, -2],
+  [2, -1],
+  [2, 0],
+  [2, 1],
+  [1, 1],
+  [0, 2],
+  [-1, 1],
+  [-2, 1],
+  [-2, 0],
+  [-2, -1],
+]
+
+async function copyJsonToClipboard(json) {
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(json)
+      log('[GUI] State copied to clipboard.', 'color: #6b9e7d')
+      return
+    }
+  } catch (e) {
+    console.warn('[GUI] Clipboard API failed:', e)
+  }
+  try {
+    const ta = document.createElement('textarea')
+    ta.value = json
+    ta.setAttribute('readonly', '')
+    ta.style.position = 'fixed'
+    ta.style.left = '-9999px'
+    document.body.appendChild(ta)
+    ta.select()
+    const ok = document.execCommand('copy')
+    document.body.removeChild(ta)
+    if (ok) {
+      log('[GUI] State copied (legacy fallback).', 'color: #6b9e7d')
+      return
+    }
+  } catch (e2) {
+    console.warn('[GUI] execCommand copy failed:', e2)
+  }
+  log('[GUI] Copy failed — JSON printed to console.', 'color: #c45c5c')
+  console.log('[GUI] export state:\n', json)
+}
 
 export class GUIManager {
   constructor(app) {
@@ -36,10 +106,10 @@ export class GUIManager {
       aoRadius: 1,
       aoDenoise: 5,
       aoFullRes: false,
-      vignette: true,
-      dof: true,
+      vignette: false,
+      dof: false,
       dofFocalLength: 50,
-      dofBokehScale: 3,
+      dofBokehScale: 1.2,
       grain: true,
       grainStrength: 0.1,
       grainFPS: 0,
@@ -56,9 +126,13 @@ export class GUIManager {
       whiteMode: false,
       blendNoiseScale: 0.03,
       blendOffset: 0.0,
+      biomeLo: 'moody',
+      biomeHi: 'winter',
+      levelBias: -0.3,
+      showSlopeArrows: false,
     },
     renderer: {
-      dpr: 1, // Will be set dynamically based on device
+      dpr: 1,
     },
     roads: {
       animateWFC: true,
@@ -83,7 +157,7 @@ export class GUIManager {
       speed: 2,
       count: 4,
       opacity: 0.35,
-      break: 0.135,
+      waveBreak: 0.135,
       width: 0.27,
       offset: 0.3,
       gradientOpacity: 0.31,
@@ -91,7 +165,7 @@ export class GUIManager {
       showMask: false,
       coveCutoff: 0.978,
       coveRadius: 2.041,
-      coveBlur: 2.624,
+      coveBlur: 3,
       coveStrength: 2.274,
       coveFade: true,
       coveThin: true,
@@ -104,29 +178,40 @@ export class GUIManager {
     const gui = new GUI()
     this.gui = gui
 
-    // Store params on app for single source of truth
-    const allParams = app.params = JSON.parse(JSON.stringify(GUIManager.defaultParams))
+    const allParams = (app.params = structuredClone(GUIManager.defaultParams))
 
-    // DPR dropdown (default 1)
-    allParams.renderer.dpr = 1
+    this._addCoreControls(gui, allParams)
+    this._addDebugToggles(gui, allParams)
+    this._addBiomeControls(gui, allParams)
+    this._addActionButtons(gui, allParams)
+    this._addDecorationFolder(gui, allParams)
+    this._addWaterFolder(gui, allParams)
+    this._addWavesFolder(gui, allParams)
+    this._addLightsFolder(gui, allParams)
+    this._addPostProcessingFolder(gui, allParams)
+
+    return allParams
+  }
+
+  _addCoreControls(gui, allParams) {
+    const { app } = this
     gui.add(allParams.renderer, 'dpr', [1, 1.5, 2]).name('DPR').onChange((v) => {
       app.renderer.setPixelRatio(v)
       app.onResize()
     })
 
-    // Top-level controls (no folder)
     this.fovController = gui.add(allParams.camera, 'fov', 20, 90, 1).name('FOV').onChange((v) => {
       app.perspCamera.fov = v
       app.perspCamera.updateProjectionMatrix()
     })
+  }
 
-    // Debug view
-    const viewMap = { final: 0, color: 1, normal: 3, ao: 4, overlay: 5, mask: 6 }
-    gui.add(allParams.debug, 'view', Object.keys(viewMap)).name('Debug View').onChange((v) => {
-      app.debugView.value = viewMap[v]
+  _addDebugToggles(gui, allParams) {
+    const { app } = this
+    gui.add(allParams.debug, 'view', Object.keys(DEBUG_VIEW_MAP)).name('Debug View').onChange((v) => {
+      app.debugView.value = DEBUG_VIEW_MAP[v]
     })
 
-    // Visual toggles at top level
     gui.add(allParams.debug, 'originHelper').name('Axes Helpers').onChange((v) => {
       app.city.setAxesHelpersVisible(v)
     })
@@ -141,6 +226,12 @@ export class GUIManager {
     gui.add(allParams.roads, 'showOutlines').name('Grid Outlines').onChange((v) => {
       app.city?.setOutlinesVisible(v)
     })
+
+    gui.add(allParams.debug, 'showSlopeArrows').name('Slope Arrows').onChange((v) => {
+      HexGrid.SHOW_SLOPE_ARROWS = v
+      app.city?.updateTileColors?.()
+    })
+
     gui.add(allParams.roads, 'animateWFC').name('Animate WFC')
     gui.add(allParams.debug, 'tileLabels').name('Tile Labels').onChange((v) => {
       app.city.setTileLabelsVisible(v)
@@ -156,75 +247,106 @@ export class GUIManager {
     gui.add(allParams.debug, 'whiteMode').name('White Mode').onChange((v) => {
       app.city.setWhiteMode(v)
     })
+  }
 
-    // Biome texture pickers + level bias
-    const biomeOptions = {
-      'moody': './assets/textures/moody.png',
-      'summer': './assets/textures/summer.png',
-      'fall': './assets/textures/fall.png',
-      'winter': './assets/textures/winter.png',
-      'default': './assets/textures/default.png',
-    }
-    allParams.debug.biomeLo = 'moody'
-    allParams.debug.biomeHi = 'winter'
-    allParams.debug.levelBias = -0.3
-    gui.add(allParams.debug, 'biomeLo', Object.keys(biomeOptions)).name('Biome Lo').onChange((v) => {
-      app.city.swapBiomeTexture('lo', biomeOptions[v])
+  _addBiomeControls(gui, allParams) {
+    const { app } = this
+    const keys = Object.keys(BIOME_TEXTURE_BY_KEY)
+    gui.add(allParams.debug, 'biomeLo', keys).name('Biome Lo').onChange((v) => {
+      app.city.swapBiomeTexture('lo', BIOME_TEXTURE_BY_KEY[v])
     })
-    gui.add(allParams.debug, 'biomeHi', Object.keys(biomeOptions)).name('Biome Hi').onChange((v) => {
-      app.city.swapBiomeTexture('hi', biomeOptions[v])
+    gui.add(allParams.debug, 'biomeHi', keys).name('Biome Hi').onChange((v) => {
+      app.city.swapBiomeTexture('hi', BIOME_TEXTURE_BY_KEY[v])
     })
     gui.add(allParams.debug, 'levelBias', -1, 1, 0.05).name('Level Bias').onChange((v) => {
       if (app.city._levelBias) app.city._levelBias.value = v
     })
+  }
 
-    // Action buttons
-    gui.add({ exportPNG: () => app.exportPNG() }, 'exportPNG').name('Export JPG')
-    gui.add({ reset: () => {
-      app.city.reset()
-      app.city.setHelpersVisible(allParams.debug.hexGrid)
-      app.perspCamera.position.set(0.903, 100.036, 59.610)
-      app.controls.target.set(0.903, 1, 1.168)
-      app.controls.update()
-    } }, 'reset').name('Clear All')
-    gui.add({ autoBuild: () => app.city.autoBuild([
-      [0,0],[0,-1],[1,-1],[1,0],[0,1],[-1,0],[-1,-1],[-1,-2],[0,-2],[1,-2],[2,-1],[2,0],[2,1],[1,1],[0,2],[-1,1],[-2,1],[-2,0],[-2,-1]
-    ]) }, 'autoBuild').name('Build All (Modular)')
-    gui.add({ buildAll: () => {
-      import('./lib/Sounds.js').then(({ Sounds }) => Sounds.play('pop', 1.0, 0, 0.3))
-      app.city.populateAllGrids()
-    } }, 'buildAll').name('Build All (Single Solve)')
+  _addActionButtons(gui, allParams) {
+    const { app } = this
+    gui
+      .add(
+        {
+          exportSnapshot: () => {
+            void app.exportPNG().catch((e) => console.error('[GUI] exportPNG', e))
+          },
+        },
+        'exportSnapshot',
+      )
+      .name('Export PNG')
+
+    gui.add(
+      {
+        reset: () => {
+          app.city.reset()
+          app.city.setHelpersVisible(allParams.debug.hexGrid)
+          app.perspCamera.position.set(0.903, 100.036, 59.61)
+          app.controls.target.set(0.903, 1, 1.168)
+          app.controls.update()
+        },
+      },
+      'reset',
+    ).name('Clear All')
+
+    gui.add({ autoBuild: () => app.city.autoBuild(AUTO_BUILD_HEXES) }, 'autoBuild').name('Build All (Modular)')
+    gui.add(
+      {
+        buildAll: () => {
+          Sounds.play('pop', 1.0, 0, 0.3)
+          app.city.populateAllGrids()
+        },
+      },
+      'buildAll',
+    ).name('Build All (Single Solve)')
     gui.add({ benchmark: () => app.city.runBenchmark(50) }, 'benchmark').name('Modular (50 runs)')
     gui.add({ benchmarkBA: () => app.city.runBuildAllBenchmark(50) }, 'benchmarkBA').name('Single Solve (50 runs)')
 
-    gui.add({
-      copyState: () => {
-        const exportData = {
-          ...allParams,
-          cameraState: {
-            position: { x: app.camera.position.x, y: app.camera.position.y, z: app.camera.position.z },
-            target: { x: app.controls.target.x, y: app.controls.target.y, z: app.controls.target.z },
+    gui.add(
+      {
+        copyState: () => {
+          const exportData = {
+            ...allParams,
+            cameraState: {
+              position: { x: app.perspCamera.position.x, y: app.perspCamera.position.y, z: app.perspCamera.position.z },
+              target: { x: app.controls.target.x, y: app.controls.target.y, z: app.controls.target.z },
+            },
           }
-        }
-        const json = JSON.stringify(exportData, null, 2)
-        navigator.clipboard.writeText(json)
-        console.log('GUI State copied:\n', json)
-      }
-    }, 'copyState').name('Copy GUI State')
-    gui.add({
-      logControls: () => {
-        const c = app.controls
-        const cam = app.camera
-        console.log('OrbitControls State:')
-        console.log('  camera.position:', cam.position.x.toFixed(3), cam.position.y.toFixed(3), cam.position.z.toFixed(3))
-        console.log('  target:', c.target.x.toFixed(3), c.target.y.toFixed(3), c.target.z.toFixed(3))
-        console.log('  distance:', cam.position.distanceTo(c.target).toFixed(3))
-        console.log('  polar angle (vertical):', c.getPolarAngle().toFixed(3), 'rad =', (c.getPolarAngle() * 180 / Math.PI).toFixed(1) + '°')
-        console.log('  azimuth angle (horizontal):', c.getAzimuthalAngle().toFixed(3), 'rad =', (c.getAzimuthalAngle() * 180 / Math.PI).toFixed(1) + '°')
-      }
-    }, 'logControls').name('Log Orbit State')
+          void copyJsonToClipboard(JSON.stringify(exportData, null, 2))
+        },
+      },
+      'copyState',
+    ).name('Copy GUI State')
 
-    // Decoration folder
+    gui.add(
+      {
+        logControls: () => {
+          const c = app.controls
+          const cam = app.perspCamera
+          console.log('OrbitControls State:')
+          console.log('  camera.position:', cam.position.x.toFixed(3), cam.position.y.toFixed(3), cam.position.z.toFixed(3))
+          console.log('  target:', c.target.x.toFixed(3), c.target.y.toFixed(3), c.target.z.toFixed(3))
+          console.log('  distance:', cam.position.distanceTo(c.target).toFixed(3))
+          console.log(
+            '  polar angle (vertical):',
+            c.getPolarAngle().toFixed(3),
+            'rad =',
+            ((c.getPolarAngle() * 180) / Math.PI).toFixed(1) + '°',
+          )
+          console.log(
+            '  azimuth angle (horizontal):',
+            c.getAzimuthalAngle().toFixed(3),
+            'rad =',
+            ((c.getAzimuthalAngle() * 180) / Math.PI).toFixed(1) + '°',
+          )
+        },
+      },
+      'logControls',
+    ).name('Log Orbit State')
+  }
+
+  _addDecorationFolder(gui, allParams) {
+    const { app } = this
     const decorationFolder = gui.addFolder('Decoration').close()
     decorationFolder.add(allParams.decoration, 'treeNoiseFreq', 0.01, 0.2, 0.01).name('Tree Noise Freq').onChange((v) => {
       setTreeNoiseFrequency(v)
@@ -242,7 +364,10 @@ export class GUIManager {
       setBuildingThreshold(v)
       app.city.repopulateDecorations()
     })
-    // Water folder
+  }
+
+  _addWaterFolder(gui, allParams) {
+    const { app } = this
     const waterFolder = gui.addFolder('Water').close()
     waterFolder.add(allParams.water, 'y', 0.7, 1.0, 0.01).name('Y Height').onChange((v) => {
       if (app.city.waterPlane) app.city.waterPlane.position.y = v
@@ -257,7 +382,7 @@ export class GUIManager {
       if (app.city._waterFreq) app.city._waterFreq.value = v
     })
     waterFolder.add(allParams.water, 'angle', 0, 360, 1).name('Angle').onChange((v) => {
-      if (app.city._waterAngle) app.city._waterAngle.value = v * Math.PI / 180
+      if (app.city._waterAngle) app.city._waterAngle.value = (v * Math.PI) / 180
     })
     waterFolder.add(allParams.water, 'brightness', 0.1, 0.9, 0.01).name('Brightness').onChange((v) => {
       if (app.city._waterBrightness) app.city._waterBrightness.value = v
@@ -265,7 +390,10 @@ export class GUIManager {
     waterFolder.add(allParams.water, 'contrast', 1, 40, 0.5).name('Contrast').onChange((v) => {
       if (app.city._waterContrast) app.city._waterContrast.value = v
     })
-    // Waves folder
+  }
+
+  _addWavesFolder(gui, allParams) {
+    const { app } = this
     const wavesFolder = gui.addFolder('Waves').close()
     wavesFolder.add(allParams.waves, 'speed', 0.1, 5.0, 0.05).name('Speed').onChange((v) => {
       if (app.city._waveSpeed) app.city._waveSpeed.value = v
@@ -276,7 +404,7 @@ export class GUIManager {
     wavesFolder.add(allParams.waves, 'opacity', 0, 1, 0.05).name('Opacity').onChange((v) => {
       if (app.city._waveOpacity) app.city._waveOpacity.value = v
     })
-    wavesFolder.add(allParams.waves, 'break', 0, 0.5, 0.005).name('Break').onChange((v) => {
+    wavesFolder.add(allParams.waves, 'waveBreak', 0, 0.5, 0.005).name('Break').onChange((v) => {
       if (app.city._waveNoiseBreak) app.city._waveNoiseBreak.value = v
     })
     wavesFolder.add(allParams.waves, 'width', 0.1, 0.98, 0.01).name('Width').onChange((v) => {
@@ -295,13 +423,22 @@ export class GUIManager {
       if (app.wavesMask) app.wavesMask.showDebug = v
     })
     wavesFolder.add(allParams.waves, 'coveCutoff', 0, 3).name('Cove Cutoff').onChange((v) => {
-      if (app.wavesMask) { app.wavesMask._coveCutoff = v; app.wavesMask.renderCoveOverlay() }
+      if (app.wavesMask) {
+        app.wavesMask._coveCutoff = v
+        app.wavesMask.renderCoveOverlay()
+      }
     })
     wavesFolder.add(allParams.waves, 'coveRadius', 0.5, 4).name('Cove Radius').onChange((v) => {
-      if (app.wavesMask) { app.wavesMask._coveRadius = v; app.wavesMask.renderCoveOverlay() }
+      if (app.wavesMask) {
+        app.wavesMask._coveRadius = v
+        app.wavesMask.renderCoveOverlay()
+      }
     })
     wavesFolder.add(allParams.waves, 'coveBlur', 0, 4).name('Cove Blur').onChange((v) => {
-      if (app.wavesMask) { app.wavesMask._coveBlur = Math.round(v); app.wavesMask.renderCoveOverlay() }
+      if (app.wavesMask) {
+        app.wavesMask._coveBlur = Math.round(v)
+        app.wavesMask.renderCoveOverlay()
+      }
     })
     wavesFolder.add(allParams.waves, 'coveStrength', 0, 3).name('Cove Strength').onChange((v) => {
       if (app.city._coveStrength) app.city._coveStrength.value = v
@@ -315,8 +452,10 @@ export class GUIManager {
     wavesFolder.add(allParams.waves, 'coveThin').name('Cove Thin').onChange((v) => {
       if (app.city._coveThin) app.city._coveThin.value = v ? 1 : 0
     })
+  }
 
-    // Lights folder
+  _addLightsFolder(gui, allParams) {
+    const { app } = this
     const lightsFolder = gui.addFolder('Lights').close()
     lightsFolder.add(allParams.lighting, 'envIntensity', 0, 2, 0.05).name('Env Intensity').onChange((v) => {
       app.scene.environmentIntensity = v
@@ -348,8 +487,10 @@ export class GUIManager {
     lightsFolder.add(allParams.lighting, 'showHelper').name('Show Helper').onChange((v) => {
       if (app.lighting.dirLightHelper) app.lighting.dirLightHelper.visible = v
     })
+  }
 
-    // Effects folder
+  _addPostProcessingFolder(gui, allParams) {
+    const { app } = this
     const fxFolder = gui.addFolder('Post Processing').close()
     fxFolder.add(allParams.fx, 'ao').name('AO').onChange((v) => {
       app.aoEnabled.value = v ? 1 : 0
@@ -384,17 +525,15 @@ export class GUIManager {
     fxFolder.add(allParams.fx, 'grainStrength', 0, 0.2, 0.005).name('Grain Strength').onChange((v) => {
       app.grainStrength.value = v
     })
-    fxFolder.add(allParams.fx, 'grainFPS', 0, 60, 1).name('Grain FPS')
-
-    return allParams
+    fxFolder.add(allParams.fx, 'grainFPS', 0, 60, 1).name('Grain FPS').onChange((v) => {
+      if (app.grainFPS) app.grainFPS.value = v
+    })
   }
 
-  // Apply all GUI params to scene objects (called after init)
   applyParams() {
     const { app } = this
     const { params } = app
 
-    // Lighting
     app.scene.environmentIntensity = params.lighting.envIntensity
     if (app.lighting.dirLight) {
       app.lighting.dirLight.intensity = params.lighting.dirLight
@@ -407,7 +546,7 @@ export class GUIManager {
       app.lighting.updateShadowFrustum()
     }
     if (app.lighting.dirLightHelper) app.lighting.dirLightHelper.visible = params.lighting.showHelper
-    // Material
+
     if (app.city.roadMaterial) {
       app.city.roadMaterial.roughness = params.material.roughness
       app.city.roadMaterial.metalness = params.material.metalness
@@ -416,7 +555,6 @@ export class GUIManager {
       app.city.roadMaterial.iridescence = params.material.iridescence
     }
 
-    // Post processing
     app.aoEnabled.value = params.fx.ao ? 1 : 0
     if (app.aoPass) {
       app.aoPass.scale.value = params.fx.aoStrength
@@ -429,35 +567,36 @@ export class GUIManager {
     app.dofBokehScale.value = params.fx.dofBokehScale
     app.grainEnabled.value = params.fx.grain ? 1 : 0
     app.grainStrength.value = params.fx.grainStrength
+    if (app.grainFPS) app.grainFPS.value = params.fx.grainFPS
 
-    // Camera
     app.perspCamera.fov = params.camera.fov
     app.perspCamera.updateProjectionMatrix()
     app.controls.maxPolarAngle = params.debug.debugCam ? Math.PI : 1.424
     app.controls.minDistance = params.debug.debugCam ? 0 : 25
     app.controls.maxDistance = params.debug.debugCam ? Infinity : 410
     app.city.setAxesHelpersVisible(params.debug.originHelper)
-
-    // Hex helper visibility
     app.city.setHelpersVisible(params.debug.hexGrid)
 
-    // Level bias
     if (app.city._levelBias) app.city._levelBias.value = params.debug.levelBias
 
-    // Water
+    const loPath = BIOME_TEXTURE_BY_KEY[params.debug.biomeLo]
+    const hiPath = BIOME_TEXTURE_BY_KEY[params.debug.biomeHi]
+    if (loPath) app.city.swapBiomeTexture('lo', loPath)
+    if (hiPath) app.city.swapBiomeTexture('hi', hiPath)
+
     if (app.city.waterPlane) app.city.waterPlane.position.y = params.water.y
     if (app.city._waterOpacity) app.city._waterOpacity.value = params.water.opacity
     if (app.city._waterSpeed) app.city._waterSpeed.value = params.water.speed
     if (app.city._waterFreq) app.city._waterFreq.value = params.water.freq
-    if (app.city._waterAngle) app.city._waterAngle.value = params.water.angle * Math.PI / 180
+    if (app.city._waterAngle) app.city._waterAngle.value = (params.water.angle * Math.PI) / 180
     if (app.city._waterBrightness) app.city._waterBrightness.value = params.water.brightness
     if (app.city._waterContrast) app.city._waterContrast.value = params.water.contrast
-    // Waves
+
     if (app.city._waveSpeed) app.city._waveSpeed.value = params.waves.speed
     if (app.city._waveCount) app.city._waveCount.value = params.waves.count
     if (app.city._waveOpacity) app.city._waveOpacity.value = params.waves.opacity
     if (app.city._waveGradientOpacity) app.city._waveGradientOpacity.value = params.waves.gradientOpacity
-    if (app.city._waveNoiseBreak) app.city._waveNoiseBreak.value = params.waves.break
+    if (app.city._waveNoiseBreak) app.city._waveNoiseBreak.value = params.waves.waveBreak
     if (app.city._waveWidth) app.city._waveWidth.value = 1 - params.waves.width
     if (app.city._waveOffset) app.city._waveOffset.value = params.waves.offset
     if (app.city._waveGradientColor) app.city._waveGradientColor.value.set(params.waves.gradientColor)
@@ -465,9 +604,13 @@ export class GUIManager {
     if (app.city._coveFade) app.city._coveFade.value = params.waves.coveFade ? 1 : 0
     if (app.city._coveThin) app.city._coveThin.value = params.waves.coveThin ? 1 : 0
     if (app.city._coveShow) app.city._coveShow.value = params.waves.coveShow ? 1 : 0
-    if (app.wavesMask) app.wavesMask.showDebug = params.waves.showMask
+    if (app.wavesMask) {
+      app.wavesMask.showDebug = params.waves.showMask
+      app.wavesMask._coveCutoff = params.waves.coveCutoff
+      app.wavesMask._coveRadius = params.waves.coveRadius
+      app.wavesMask._coveBlur = params.waves.coveBlur
+    }
 
-    // Renderer
     app.renderer.setPixelRatio(params.renderer.dpr)
   }
 }

@@ -13,7 +13,8 @@ import { cubeKey, parseCubeKey, cubeCoordsInRadius, cubeDistance, offsetToCube, 
 import { WFCManager } from './WFCManager.js'
 import { HexMapDebug } from './HexMapDebug.js'
 import { HexMapInteraction } from './HexMapInteraction.js'
-import { setStatus, setStatusAsync, log, App } from '../App.js'
+import { setStatus, setStatusAsync, log } from '../core/logging/gameConsole.js'
+import { App } from '../App.js'
 import { TILE_LIST, TileType, LEVELS_COUNT } from './HexTileData.js'
 import { HexTileGeometry } from './HexTiles.js'
 import { HexGrid, HexGridState } from './HexGrid.js'
@@ -28,7 +29,7 @@ import {
 import { initGlobalTreeNoise, rebuildNoiseTables, Decorations } from './Decorations.js'
 import { Water } from './effects/Water.js'
 import { random, setSeed } from '../SeededRandom.js'
-import { Sounds } from '../lib/Sounds.js'
+import { Sounds } from '../core/audio/Sounds.js'
 
 const LEVEL_HEIGHT = 0.5
 const TILE_SURFACE = 1
@@ -106,6 +107,7 @@ export class HexMap {
     this.isRegenerating = false
     this._buildCancelled = false
     this._buildEpoch = 0
+    this._disposeTimeouts = new Set()
 
     // WFC solve queue (prevents concurrent solves)
     this._wfcBusy = false
@@ -116,6 +118,21 @@ export class HexMap {
 
     // Convenience alias
     this.hexWfcRules = null
+  }
+
+  _clearDeferredDisposals() {
+    if (!this._disposeTimeouts || this._disposeTimeouts.size === 0) return
+    for (const t of this._disposeTimeouts) clearTimeout(t)
+    this._disposeTimeouts.clear()
+  }
+
+  _deferDisposeGrids(gridsToDispose, delayMs = 500) {
+    const t = setTimeout(() => {
+      this._disposeTimeouts?.delete?.(t)
+      for (const grid of gridsToDispose) grid.dispose()
+    }, delayMs)
+    this._disposeTimeouts.add(t)
+    return t
   }
 
   async init() {
@@ -131,11 +148,22 @@ export class HexMap {
 
     // Hover highlight for click-to-solve region
     this.interaction.initHoverHighlight()
+    this.interaction.initCapitalMarker()
 
     // Create only the center placeholder — others created dynamically on demand
     await this.createGrid(0, 0)
 
     this.scene.add(this.tileLabels)
+  }
+
+  async ensureStartingGridPopulated(options = {}) {
+    const centerGrid = this.grids.get('0,0')
+    if (centerGrid && centerGrid.state === HexGridState.PLACEHOLDER) {
+      await this.onGridClick(centerGrid, {
+        animate: options.animate ?? false,
+      })
+    }
+    this.interaction.syncCapitalMarker()
   }
 
   /**
@@ -213,7 +241,8 @@ export class HexMap {
     // setupDiffuseColor override prevents auto-multiply, so this is pure data
     const batchColor = varyingProperty('vec3', 'vBatchColor')
     const levelBlend = batchColor.r
-    const isDecoration = batchColor.g.greaterThan(0.5)
+    const biomeID = batchColor.g // 0.0=temperate, 0.5=winter, 1.0=wasteland
+    const isDecoration = batchColor.b.greaterThan(0.5)
     // Raw geometry Y (before batch transform) for slope gradient
     // Tile surface is at geomY=1.0, each 0.5u above = +1 level
     // So slope contribution = (geomY - 1.0) / 0.5 / (LEVELS_COUNT - 1)
@@ -229,6 +258,16 @@ export class HexMap {
     // Blended season textures (normal mode)
     const blendedColor = mix(sampleA, sampleB, blendFactor)
 
+    // Biome Colors
+    const temperateColor = blendedColor
+    const winterColor = mix(blendedColor, vec3(1.0, 1.0, 1.0), 0.7) // Snow blend
+    const wastelandColor = blendedColor.mul(vec3(0.4, 0.35, 0.3)) // Darker, desaturated ash
+    
+    const finalBiomeColor = select(biomeID.greaterThan(0.75), 
+      wastelandColor,
+      select(biomeID.greaterThan(0.25), winterColor, temperateColor)
+    )
+
     // Debug HSL gradient (level colors mode): hue 0 (red) → 250/360 (blue)
     const hue = clamp(mix(float(100.0 / 360.0), float(360.0 / 360.0), blendFactor), 0, 1)
     const h6 = hue.mul(6.0)
@@ -241,7 +280,7 @@ export class HexMap {
     this._colorMode = uniform(0)
     const isDebug = this._colorMode.equal(1)
     const isWhite = this._colorMode.equal(2)
-    this._combinedColor = select(isWhite, vec3(1, 1, 1), select(isDebug, debugColor, blendedColor))
+    this._combinedColor = select(isWhite, vec3(1, 1, 1), select(isDebug, debugColor, finalBiomeColor))
 
     // Unlit water mask material (for per-frame mask RT render — no PBR overhead)
     this.waterMaskMaterial = new MeshBasicNodeMaterial()
@@ -312,9 +351,10 @@ export class HexMap {
     // Calculate world offset and global cube center
     const worldOffset = this.calculateWorldOffset(gridX, gridZ)
     const globalCenterCube = worldOffsetToGlobalCube(worldOffset)
+    const biome = App.instance.game?.getBiome(key) || 'temperate'
 
     // Create grid in PLACEHOLDER state
-    const grid = new HexGrid(this.scene, this.roadMaterial, this.hexGridRadius, worldOffset)
+    const grid = new HexGrid(this.scene, this.roadMaterial, this.hexGridRadius, worldOffset, biome)
     grid.gridCoords = { x: gridX, z: gridZ }
     grid.globalCenterCube = globalCenterCube
     grid.onClick = () => {
@@ -739,6 +779,8 @@ export class HexMap {
     // Pass animationDone promise so caller can wait for drop animation to finish
     this.onTilesChanged?.(grid.animationDone)
 
+    this.interaction.syncCapitalMarker()
+
     return animDuration
   }
 
@@ -1026,7 +1068,7 @@ export class HexMap {
     log(`[AUTO-BUILD] Done (${parts.join(', ')})`, color)
 
     // Wait for all drop animations to finish, then rebuild waves mask
-    await Promise.all(animPromises)
+    await Promise.allSettled(animPromises)
     Sounds.play('intro')
     this.onTilesChanged?.(Promise.resolve())
 
@@ -1060,6 +1102,7 @@ export class HexMap {
 
     // ---- Clear state (inline from regenerateAll) ----
     this.isRegenerating = true
+    this._clearDeferredDisposals()
     this.globalCells.clear()
     this.failedCells.clear()
     this.conflictCount = 0
@@ -1074,11 +1117,7 @@ export class HexMap {
     for (const grid of gridsToDispose) {
       this.scene.remove(grid.group)
     }
-    setTimeout(() => {
-      for (const grid of gridsToDispose) {
-        grid.dispose()
-      }
-    }, 500)
+    this._deferDisposeGrids(gridsToDispose, 500)
 
     this.initWfcRules()
 
@@ -1157,7 +1196,6 @@ export class HexMap {
       this._autoBuilding = false
       this._releaseWfcLock()
       log('[BUILD ALL] WFC FAILED', 'color: red')
-      const { Sounds } = await import('../lib/Sounds.js')
       Sounds.play('incorrect')
       await setStatusAsync('[BUILD ALL] WFC FAILED')
       for (const grid of this.grids.values()) {
@@ -1246,7 +1284,7 @@ export class HexMap {
     for (const grid of this.grids.values()) {
       if (grid.animationDone) animPromises.push(grid.animationDone)
     }
-    this.onTilesChanged?.(Promise.all(animPromises))
+    this.onTilesChanged?.(Promise.allSettled(animPromises).then(() => undefined))
 
     return { success: true, time: parseFloat(totalTime), backtracks: result.backtracks || 0, tries: result.tries || 0 }
   }
@@ -1480,8 +1518,12 @@ export class HexMap {
       results.push({ seed, ...(result || { success: false }) })
 
       if (result?.success) {
-        await new Promise(r => setTimeout(r, 1000))
-        App.instance?.exportPNG({ filename: `benchmark-${i + 1}-seed${seed}.jpg` })
+        await new Promise((r) => setTimeout(r, 1000))
+        try {
+          await App.instance?.exportPNG({ filename: `benchmark-${i + 1}-seed${seed}.jpg` })
+        } catch (e) {
+          log(`[BENCHMARK] Export failed: ${e?.message || e}`, 'color: orange')
+        }
       }
 
       if (this._buildCancelled) {
@@ -1570,9 +1612,8 @@ export class HexMap {
     for (const grid of gridsToDispose) {
       this.scene.remove(grid.group)
     }
-    setTimeout(() => {
-      for (const grid of gridsToDispose) grid.dispose()
-    }, 500)
+    this._clearDeferredDisposals()
+    this._deferDisposeGrids(gridsToDispose, 500)
 
     this.initWfcRules()
     this.wfcManager.cancelAndRestart()
@@ -1598,6 +1639,7 @@ export class HexMap {
 
     // Set flag to prevent overlay rendering during disposal
     this.isRegenerating = true
+    this._clearDeferredDisposals()
 
     // Clear global state
     this.globalCells.clear()
@@ -1623,11 +1665,7 @@ export class HexMap {
     }
 
     // Defer disposal to ensure GPU queue has finished with textures
-    setTimeout(() => {
-      for (const grid of gridsToDispose) {
-        grid.dispose()
-      }
-    }, 500)
+    this._deferDisposeGrids(gridsToDispose, 500)
 
     // Clear WFC rules to pick up any changes
     this.initWfcRules()
@@ -1650,6 +1688,7 @@ export class HexMap {
   }
 
   update(dt) {
+    this.interaction?.tickCapitalMarker?.(dt)
   }
 
   // === Water uniform proxies (GUI accesses via app.city._waterSpeed etc.) ===
@@ -1712,7 +1751,7 @@ export class HexMap {
   setWhiteMode(enabled) { this.debug.setWhiteMode(enabled) }
   _updateColorNode() { this.debug._updateColorNode() }
   updateTileColors() { this.debug.updateTileColors() }
-  getOverlayObjects() { return this.debug.getOverlayObjects() }
+  getOverlayObjects() { return this.debug?.getOverlayObjects?.() ?? [] }
   getWaterObjects() {
     const water = []
     if (this.water?.mesh) water.push(this.water.mesh)
@@ -1746,6 +1785,6 @@ export class HexMap {
   // Stub methods for App.js compatibility
   onHover() {}
   onPointerUp() {}
-  onRightClick() {}
+  onRightClick() { App.instance?.clearSelections?.() }
   startIntroAnimation() {}
 }

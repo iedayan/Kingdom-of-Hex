@@ -5,8 +5,14 @@ import {
   EquirectangularReflectionMapping,
   DirectionalLight,
   DirectionalLightHelper,
+  HemisphereLight,
 } from 'three/webgpu'
 import { HDRLoader } from 'three/examples/jsm/Addons.js'
+
+const HDR_PATH = './assets/hdr/venice_sunset_1k.hdr'
+const SCENE_SIZE = 98
+const MAX_BUILDING_HEIGHT = 60
+const DEFAULT_SHADOW_QUALITY = 'high'
 
 export class Lighting {
   constructor(scene, renderer, params) {
@@ -17,65 +23,79 @@ export class Lighting {
     this.dirLight = null
     this.dirLightOffset = null
     this.dirLightHelper = null
+    this.hemiLight = null
     this.sceneBounds = null
+
+    this._corners = Array(8).fill(null).map(() => new Vector3())
+    this._lightViewMatrix = null
+    this._initialized = false
   }
 
   async init() {
     const { scene, params } = this
 
-    const texture = await new HDRLoader()
-      .setPath('./assets/hdr/')
-      .loadAsync('venice_sunset_1k.hdr')
-    texture.mapping = EquirectangularReflectionMapping
-    texture.needsUpdate = true
-    scene.background = new Color(0x98a4bb)
-    scene.environment = texture
+    try {
+      const texture = await new HDRLoader().loadAsync(HDR_PATH)
+      texture.mapping = EquirectangularReflectionMapping
+      texture.needsUpdate = true
+      scene.environment = texture
+    } catch (error) {
+      console.warn('[Lighting] Failed to load HDR texture, continuing without environment:', error)
+      scene.environment = null
+    }
 
-    // Scene bounds for shadow calculation (7x7 lots, centered on middle lot, ~98x98, buildings up to ~50 height)
+    scene.background = new Color(0x8492ac)
+
+    this.hemiLight = new HemisphereLight(0xcfd8e8, 0x252830, 0.4)
+    scene.add(this.hemiLight)
+
     this.sceneBounds = new Box3(
-      new Vector3(-50, 0, -50),
-      new Vector3(55, 50, 55)
+      new Vector3(-SCENE_SIZE / 2, 0, -SCENE_SIZE / 2),
+      new Vector3(SCENE_SIZE / 2, MAX_BUILDING_HEIGHT, SCENE_SIZE / 2)
     )
 
-    // Directional light for key shadows/highlights (values set by applyParams)
-    this.dirLight = new DirectionalLight(0xffffff, 1)
+    this.dirLight = new DirectionalLight(0xfff4ea, 1.05)
     this.dirLightOffset = new Vector3(50, 100, 50)
     this.dirLight.position.copy(this.dirLightOffset)
     this.dirLight.castShadow = true
-    this.dirLight.shadow.mapSize.width = 4096
-    this.dirLight.shadow.mapSize.height = 4096
+    this.setShadowQuality(DEFAULT_SHADOW_QUALITY)
     this.dirLight.shadow.bias = -0.0005
     scene.add(this.dirLight)
-    scene.add(this.dirLight.target) // Required for dynamic target positioning
+    scene.add(this.dirLight.target)
 
-    // Update shadow frustum based on scene bounds and light position
     this.updateShadowFrustum()
 
-    // Light helper to visualize direction (visibility set by applyParams)
     this.dirLightHelper = new DirectionalLightHelper(this.dirLight, 10)
+    this.dirLightHelper.visible = params?.lighting?.showHelper ?? false
     scene.add(this.dirLightHelper)
 
+    this._initialized = true
   }
 
-  // Compute shadow camera frustum to cover scene from any light angle
+  setShadowQuality(quality) {
+    const sizes = { low: 1024, medium: 2048, high: 4096 }
+    const size = sizes[quality] || 4096
+    if (this.dirLight) {
+      this.dirLight.shadow.mapSize.width = size
+      this.dirLight.shadow.mapSize.height = size
+    }
+  }
+
   updateShadowFrustum() {
     const light = this.dirLight
-    const bounds = this.sceneBounds
+    if (!light) return
 
-    // Get scene center and radius (bounding sphere covers from any angle)
+    const bounds = this.sceneBounds
     const center = new Vector3()
     bounds.getCenter(center)
     const radius = bounds.min.distanceTo(bounds.max) / 2
 
-    // Point light at scene center
     light.target.position.copy(center)
     light.target.updateMatrixWorld()
 
-    // Position light along offset direction from center
     light.position.copy(center).add(this.dirLightOffset)
     light.updateMatrixWorld()
 
-    // Shadow camera frustum sized to bounding sphere (works from any angle)
     const shadowCam = light.shadow.camera
     shadowCam.left = -radius
     shadowCam.right = radius
@@ -85,89 +105,104 @@ export class Lighting {
     shadowCam.far = this.dirLightOffset.length() + radius
     shadowCam.updateProjectionMatrix()
 
-    // Update helper if visible
     if (this.dirLightHelper) {
       this.dirLightHelper.update()
     }
   }
 
-  // Called every frame to update shadow camera based on camera view
   updateShadowCamera(cameraTarget, camera, orthoCamera, perspCamera) {
-    if (!this.dirLight) return
+    if (!this.dirLight || !this._initialized) return
+    if (!cameraTarget || !camera || !orthoCamera || !perspCamera) return
 
     const target = cameraTarget
     const offset = this.dirLightOffset
 
-    // Position light relative to camera target (sun follows view)
     this.dirLight.position.set(target.x + offset.x, offset.y, target.z + offset.z)
     this.dirLight.target.position.copy(target)
     this.dirLight.target.updateMatrixWorld()
     this.dirLight.updateMatrixWorld()
 
-    // Get shadow camera and its view matrix
     const shadowCam = this.dirLight.shadow.camera
     shadowCam.updateMatrixWorld()
-    const lightViewMatrix = shadowCam.matrixWorldInverse
 
-    // Calculate shadow area size based on camera view
     let halfSize
     if (camera === orthoCamera) {
       const cam = orthoCamera
       const zoom = cam.zoom || 1
-      halfSize = Math.max((cam.right - cam.left), (cam.top - cam.bottom)) / 2 / zoom
+      halfSize = Math.max(cam.right - cam.left, cam.top - cam.bottom) / 2 / zoom
     } else {
       const cam = perspCamera
       const distance = cam.position.distanceTo(target)
       const vFov = (cam.fov * Math.PI) / 180
-      const vHalf = Math.tan(vFov / 2) * distance  // vertical half-height
-      const hHalf = vHalf * cam.aspect              // horizontal half-width
-      halfSize = Math.max(vHalf, hHalf)             // use larger extent for portrait/landscape
+      const vHalf = Math.tan(vFov / 2) * distance
+      const hHalf = vHalf * cam.aspect
+      halfSize = Math.max(vHalf, hHalf)
     }
-    // Clamp to reasonable range - allow smaller when zoomed in for better resolution
     halfSize = Math.max(8, Math.min(halfSize * 1.2, 120))
-    const height = 60  // max building height + margin
+    const height = MAX_BUILDING_HEIGHT
 
-    // 8 corners of the shadow bounding box in world space
-    const corners = [
-      new Vector3(target.x - halfSize, 0, target.z - halfSize),
-      new Vector3(target.x + halfSize, 0, target.z - halfSize),
-      new Vector3(target.x - halfSize, 0, target.z + halfSize),
-      new Vector3(target.x + halfSize, 0, target.z + halfSize),
-      new Vector3(target.x - halfSize, height, target.z - halfSize),
-      new Vector3(target.x + halfSize, height, target.z - halfSize),
-      new Vector3(target.x - halfSize, height, target.z + halfSize),
-      new Vector3(target.x + halfSize, height, target.z + halfSize),
-    ]
+    const corners = this._corners
+    corners[0].set(target.x - halfSize, 0, target.z - halfSize)
+    corners[1].set(target.x + halfSize, 0, target.z - halfSize)
+    corners[2].set(target.x - halfSize, 0, target.z + halfSize)
+    corners[3].set(target.x + halfSize, 0, target.z + halfSize)
+    corners[4].set(target.x - halfSize, height, target.z - halfSize)
+    corners[5].set(target.x + halfSize, height, target.z - halfSize)
+    corners[6].set(target.x - halfSize, height, target.z + halfSize)
+    corners[7].set(target.x + halfSize, height, target.z + halfSize)
 
-    // Transform corners to light space and find AABB
     let minX = Infinity, maxX = -Infinity
     let minY = Infinity, maxY = -Infinity
     let minZ = Infinity, maxZ = -Infinity
 
-    for (const corner of corners) {
+    const lightViewMatrix = shadowCam.matrixWorldInverse
+    for (let i = 0; i < 8; i++) {
+      const corner = corners[i]
       corner.applyMatrix4(lightViewMatrix)
-      minX = Math.min(minX, corner.x)
-      maxX = Math.max(maxX, corner.x)
-      minY = Math.min(minY, corner.y)
-      maxY = Math.max(maxY, corner.y)
-      minZ = Math.min(minZ, corner.z)
-      maxZ = Math.max(maxZ, corner.z)
+      if (corner.x < minX) minX = corner.x
+      if (corner.x > maxX) maxX = corner.x
+      if (corner.y < minY) minY = corner.y
+      if (corner.y > maxY) maxY = corner.y
+      if (corner.z < minZ) minZ = corner.z
+      if (corner.z > maxZ) maxZ = corner.z
     }
 
-    // Set shadow camera frustum from light-space AABB
-    // Use proportional padding - smaller when zoomed in for better resolution
     const padding = Math.max(2, halfSize * 0.1)
     shadowCam.left = minX - padding
     shadowCam.right = maxX + padding
     shadowCam.top = maxY + padding
     shadowCam.bottom = minY - padding
-    shadowCam.near = -maxZ - padding  // Z is negative in view space
-    shadowCam.far = -minZ + padding
+    shadowCam.near = Math.max(0.1, Math.abs(minZ) - padding)
+    shadowCam.far = Math.abs(maxZ) + padding
     shadowCam.updateProjectionMatrix()
 
-    // Update light helper if visible
-    if (this.dirLightHelper) {
+    if (this.dirLightHelper && this.dirLightHelper.visible) {
       this.dirLightHelper.update()
     }
+  }
+
+  setHelperVisible(visible) {
+    if (this.dirLightHelper) {
+      this.dirLightHelper.visible = visible
+    }
+  }
+
+  dispose() {
+    if (this.dirLightHelper) {
+      this.scene.remove(this.dirLightHelper)
+      this.dirLightHelper.dispose()
+      this.dirLightHelper = null
+    }
+    if (this.dirLight) {
+      this.scene.remove(this.dirLight)
+      this.dirLight.dispose()
+      this.dirLight = null
+    }
+    if (this.hemiLight) {
+      this.scene.remove(this.hemiLight)
+      this.hemiLight.dispose()
+      this.hemiLight = null
+    }
+    this._initialized = false
   }
 }

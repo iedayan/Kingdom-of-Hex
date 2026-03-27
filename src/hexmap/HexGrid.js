@@ -28,59 +28,48 @@ import {
 
 const LEVEL_HEIGHT = 0.5
 
-/**
- * HexGrid states
- */
 export const HexGridState = {
-  PLACEHOLDER: 'placeholder',  // Not yet populated, shows clickable button
-  POPULATED: 'populated',      // Has tiles, shows helper when debug enabled
+  PLACEHOLDER: 'placeholder',
+  POPULATED: 'populated',
 }
 
-/**
- * HexGrid - Self-contained hex grid with its own BatchedMesh instances
- *
- * Each grid manages:
- * - hexMesh (tiles)
- * - decorations (trees, buildings, bridges)
- * - gridHelper (debug visualization)
- * - placeholder (clickable expansion button)
- *
- * State determines what's visible:
- * - PLACEHOLDER: Shows Placeholder, hides Helper
- * - POPULATED: Hides Placeholder, shows Helper (if debug enabled)
- */
 export class HexGrid {
-  constructor(scene, material, gridRadius, worldOffset = { x: 0, z: 0 }) {
+  static SHOW_SLOPE_ARROWS = false
+
+  constructor(scene, material, gridRadius, worldOffset = { x: 0, z: 0 }, biome = 'temperate') {
     this.scene = scene
     this.material = material
     this.gridRadius = gridRadius
     this.worldOffset = worldOffset
+    this.biome = biome
 
-    // Container group positioned at worldOffset
     this.group = new Group()
     this.group.position.set(worldOffset.x, 0, worldOffset.z)
+    this.group.userData.hexGrid = this
     this.scene.add(this.group)
 
-    // State management
     this.state = HexGridState.PLACEHOLDER
 
-    // Hex dimensions
     this.hexWidth = 2
     this.hexHeight = 2 / Math.sqrt(3) * 2
 
     this.hexTiles = []
-    this.hexGrid = null  // 2D array
+    this.hexGrid = null
     this.hexMesh = null
     this.decorations = null
     this.gridHelper = null
     this.placeholder = null
-    this.axesHelper = null   // Always visible
-    this.outline = null      // Always visible
+    this.axesHelper = null
+    this.outline = null
 
-    // Callback for placeholder click
     this.onClick = null
 
     this.dummy = new Object3D()
+
+    this._rotationAngles = [0, 1, 2, 3, 4, 5].map(r => -r * Math.PI / 3)
+    this._activeAnimations = []
+    this._outlineFadeTimer = null
+    this._initialized = false
   }
 
   /**
@@ -90,44 +79,44 @@ export class HexGrid {
    * @param {boolean} options.hidden - Start with placeholder hidden
    */
   async init(geometries = null, { hidden = false } = {}) {
-    // Create axes helper (always visible)
-    this.axesHelper = new AxesHelper(5)
-    this.axesHelper.position.set(0, 2, 0)
-    this.group.add(this.axesHelper)
+    try {
+      this.axesHelper = new AxesHelper(5)
+      this.axesHelper.position.set(0, 2, 0)
+      this.group.add(this.axesHelper)
 
-    // Create outline (always visible, renders through terrain)
-    this.createOutline()
+      this.createOutline()
 
-    // Create always-visible grid coordinate label
-    const gridKey = this.gridCoords ? `${this.gridCoords.x},${this.gridCoords.z}` : '?'
-    this.gridLabel = this.createGridLabel(gridKey)
-    this.group.add(this.gridLabel)
+      const gridKey = this.gridCoords ? `${this.gridCoords.x},${this.gridCoords.z}` : '?'
+      this.gridLabel = this.createGridLabel(gridKey)
+      this.group.add(this.gridLabel)
 
-    // Create placeholder (visible in PLACEHOLDER state)
-    this.placeholder = new Placeholder(this.gridRadius, this.hexWidth, this.hexHeight)
-    this.placeholder.group.userData.hexGrid = this  // Reference for raycasting
-    this.group.add(this.placeholder.group)
+      this.placeholder = new Placeholder(this.gridRadius, this.hexWidth, this.hexHeight)
+      this.placeholder.group.userData.hexGrid = this
+      this.group.add(this.placeholder.group)
 
-    // Create grid helper (visible in POPULATED state when debug enabled)
-    this.gridHelper = new HexGridHelper(this.gridRadius, this.hexWidth, this.hexHeight)
-    this.gridHelper.create()
-    this.gridHelper.hide()  // Hidden by default
-    this.group.add(this.gridHelper.group)
+      this.gridHelper = new HexGridHelper(this.gridRadius, this.hexWidth, this.hexHeight)
+      this.gridHelper.create()
+      this.gridHelper.hide()
+      this.group.add(this.gridHelper.group)
 
-    // Set initial visibility based on state
-    if (hidden) {
-      this.placeholder?.hide()
-      if (this.outline) this.outline.visible = false
-    } else {
-      this.updateVisibility()
+      if (hidden) {
+        this.placeholder?.hide()
+        if (this.outline) this.outline.visible = false
+      } else {
+        this.updateVisibility()
+      }
+
+      if (geometries && geometries.size > 0) {
+        const success = await this.initMeshes(geometries)
+        if (!success) throw new Error('Failed to initialize meshes')
+      }
+
+      this._initialized = true
+      return true
+    } catch (error) {
+      console.error('HexGrid.init failed:', error)
+      return false
     }
-
-    // Only initialize meshes if geometries provided (for immediate population)
-    if (geometries && geometries.size > 0) {
-      await this.initMeshes(geometries)
-    }
-
-    return true
   }
 
   /**
@@ -325,6 +314,16 @@ export class HexGrid {
   }
 
   /**
+   * Get local position of a tile within this grid's group
+   */
+  getTileLocalPosition(gridX, gridZ) {
+    return HexTileGeometry.getWorldPosition(
+      gridX - this.gridRadius,
+      gridZ - this.gridRadius
+    )
+  }
+
+  /**
    * Fade in placeholder and outline from invisible
    * @param {number} delay - ms to wait before starting fade
    */
@@ -364,76 +363,73 @@ export class HexGrid {
    * @param {Object} options - { animate, animateDelay }
    */
   async populateFromCubeResults(tiles, collapseOrder, globalCenterCube, options = {}) {
-    // Ensure meshes are initialized
-    if (!this.hexMesh) {
-      await this.initMeshes(HexTileGeometry.geoms)
-    }
-
-    const baseSize = this.gridRadius * 2 + 1
-    this.hexTiles = []
-    this.hexGrid = Array.from({ length: baseSize }, () => Array(baseSize).fill(null))
-
-    // Convert cube coords to local grid coords and place tiles
-    const placements = []
-    for (const tile of tiles) {
-      const { gridX, gridZ } = globalToLocalGrid(tile, globalCenterCube, this.gridRadius)
-
-      placements.push({
-        gridX, gridZ,
-        type: tile.type,
-        rotation: tile.rotation,
-        level: tile.level,
-      })
-    }
-
-    // Convert collapse order the same way
-    const localCollapseOrder = collapseOrder.map(tile => {
-      const { gridX, gridZ } = globalToLocalGrid(tile, globalCenterCube, this.gridRadius)
-      return {
-        gridX, gridZ,
-        type: tile.type,
-        rotation: tile.rotation,
-        level: tile.level,
+    try {
+      if (!this.hexMesh) {
+        const success = await this.initMeshes(HexTileGeometry.geoms)
+        if (!success) throw new Error('Failed to initialize meshes')
       }
-    })
 
-    // Transition to POPULATED state
-    this.state = HexGridState.POPULATED
-    this.updateVisibility()
+      const baseSize = this.gridRadius * 2 + 1
+      this.hexTiles = []
+      this.hexGrid = Array.from({ length: baseSize }, () => Array(baseSize).fill(null))
 
-    // Place all tiles
-    for (const placement of placements) {
-      this.placeTile(placement)
-    }
-    this.updateMatrices()
-    this.populateDecorations()
+      const placements = []
+      for (const tile of tiles) {
+        const { gridX, gridZ } = globalToLocalGrid(tile, globalCenterCube, this.gridRadius)
+        placements.push({
+          gridX, gridZ,
+          type: tile.type,
+          rotation: tile.rotation,
+          level: tile.level,
+        })
+      }
 
-    // Apply debug level colors if active
-    if (HexTile.debugLevelColors) {
-      this.updateTileColors()
-    }
-
-    const animate = options.animate ?? false
-    const animateDelay = options.animateDelay ?? 20
-
-    if (animate) {
-      // Pause windmill fan spin tweens so they don't fight the drop animation
-      if (this.decorations) {
-        for (const fan of this.decorations.windmillFans) {
-          fan.tween?.pause()
+      const localCollapseOrder = collapseOrder.map(tile => {
+        const { gridX, gridZ } = globalToLocalGrid(tile, globalCenterCube, this.gridRadius)
+        return {
+          gridX, gridZ,
+          type: tile.type,
+          rotation: tile.rotation,
+          level: tile.level,
         }
-      }
-      this.hideAllInstances()
-      this.animationDone = new Promise(resolve => {
-        this.animatePlacements(localCollapseOrder, animateDelay, resolve)
       })
-    } else {
-      this.animationDone = Promise.resolve()
-    }
 
-    // Return estimated animation duration so callers can time follow-up actions
-    const animDuration = animate ? localCollapseOrder.length * animateDelay : 0
-    return animDuration
+      this.state = HexGridState.POPULATED
+      this.updateVisibility()
+
+      for (const placement of placements) {
+        this.placeTile(placement)
+      }
+      this.updateMatrices()
+      this.populateDecorations()
+
+      if (HexTile.debugLevelColors) {
+        this.updateTileColors()
+      }
+
+      const animate = options.animate ?? false
+      const animateDelay = options.animateDelay ?? 20
+
+      if (animate) {
+        if (this.decorations) {
+          for (const fan of this.decorations.windmillFans) {
+            fan.tween?.pause()
+          }
+        }
+        this.hideAllInstances()
+        this.animationDone = new Promise(resolve => {
+          this.animatePlacements(localCollapseOrder, animateDelay, resolve)
+        })
+      } else {
+        this.animationDone = Promise.resolve()
+      }
+
+      const animDuration = animate ? localCollapseOrder.length * animateDelay : 0
+      return animDuration
+    } catch (error) {
+      console.error('HexGrid.populateFromCubeResults failed:', error)
+      return 0
+    }
   }
 
   /**
@@ -445,9 +441,20 @@ export class HexGrid {
     const offsetRow = placement.gridZ - gridRadius
     if (!isInHexRadius(offsetCol, offsetRow, gridRadius)) return null
 
+    if (!this.hexGrid || placement.gridX < 0 || placement.gridX >= this.hexGrid.length ||
+        placement.gridZ < 0 || placement.gridZ >= this.hexGrid[0].length) {
+      console.warn(`[HexGrid] Tile placement out of bounds: (${placement.gridX}, ${placement.gridZ})`)
+      return null
+    }
+
     const tile = new HexTile(placement.gridX, placement.gridZ, placement.type, placement.rotation)
     tile.level = placement.level ?? 0
     tile.updateLevelColor()
+
+    const biomeVal = this.biome === 'winter' ? 0.5 : (this.biome === 'wasteland' ? 1.0 : 0.0)
+    tile.color.g = biomeVal
+    tile.color.b = 0.0
+
     this.hexGrid[placement.gridX][placement.gridZ] = tile
     this.hexTiles.push(tile)
 
@@ -455,7 +462,6 @@ export class HexGrid {
       const geomId = this.geomIds.get(placement.type)
       tile.instanceId = this.hexMesh.addInstance(geomId)
       this.hexMesh.setColorAt(tile.instanceId, tile.color)
-      // Hide initially
       this.dummy.scale.setScalar(0)
       this.dummy.updateMatrix()
       this.hexMesh.setMatrixAt(tile.instanceId, this.dummy.matrix)
@@ -487,6 +493,9 @@ export class HexGrid {
     oldTile.rotation = newRotation
     oldTile.level = newLevel
     oldTile.updateLevelColor()
+    const biomeVal = this.biome === 'winter' ? 0.5 : (this.biome === 'wasteland' ? 1.0 : 0.0)
+    oldTile.color.g = biomeVal
+    oldTile.color.b = 0.0
 
     // Update BatchedMesh geometry
     if (this.hexMesh && this.geomIds.has(newType) && oldTile.instanceId !== undefined) {
@@ -529,7 +538,15 @@ export class HexGrid {
 
   hideAllInstances() { _hideAllInstances(this) }
   animateTileDrop(tile, opts) { _animateTileDrop(this, tile, opts) }
-  animatePlacements(collapseOrder, delay, onComplete) { _animatePlacements(this, collapseOrder, delay, onComplete) }
+  animatePlacements(collapseOrder, delay, onComplete) {
+    const wrappedComplete = (...args) => {
+      this._activeAnimations = this._activeAnimations.filter(a => a !== anim)
+      onComplete?.(...args)
+    }
+    const anim = _animatePlacements(this, collapseOrder, delay, wrappedComplete)
+    this._activeAnimations.push(anim)
+    return anim
+  }
   animateDecoration(items, onAllComplete) { _animateDecoration(this, items, onAllComplete) }
 
   /**
@@ -539,15 +556,13 @@ export class HexGrid {
     if (!this.hexMesh || !this.hexTiles) return
 
     const dummy = this.dummy
-    const rotationAngles = [0, 1, 2, 3, 4, 5].map(r => -r * Math.PI / 3)
+    const rotationAngles = this._rotationAngles
     const gridRadius = this.gridRadius
-    // Clear old bottom fills
+
     for (const fillId of this.bottomFills.values()) {
       this.hexMesh.deleteInstance(fillId)
     }
     this.bottomFills = new Map()
-
-    const WHITE = new Color(0xffffff)
 
     for (const tile of this.hexTiles) {
       if (tile.instanceId === null) continue
@@ -564,7 +579,6 @@ export class HexGrid {
       this.hexMesh.setMatrixAt(tile.instanceId, dummy.matrix)
       this.hexMesh.setVisibleAt(tile.instanceId, true)
 
-      // Add bottom fill under elevated tiles (geometry hangs downward from Y=0)
       if (tile.level >= 1 && this.bottomGeomId !== null) {
         const fillId = this.hexMesh.addInstance(this.bottomGeomId)
         this.hexMesh.setColorAt(fillId, tile.color)
@@ -627,7 +641,7 @@ export class HexGrid {
     }
     this.slopeArrows = []
 
-    return // TODO: slope arrows disabled — causes FPS drop + normal attribute warning
+    if (!HexGrid.SHOW_SLOPE_ARROWS) return
 
     for (const tile of this.hexTiles) {
       if (!tile.isSlope()) continue
@@ -682,6 +696,18 @@ export class HexGrid {
    * Dispose of all resources
    */
   dispose() {
+    if (this._outlineFadeTimer) {
+      clearTimeout(this._outlineFadeTimer)
+      this._outlineFadeTimer = null
+    }
+
+    for (const anim of this._activeAnimations) {
+      if (anim?.kill) anim.kill()
+    }
+    this._activeAnimations = []
+
+    gsap.killTweensOf(this.outline)
+
     this.clearTiles()
 
     if (this.decorations) {
@@ -720,9 +746,9 @@ export class HexGrid {
       this.hexMesh = null
     }
 
-    // Remove group from scene
     this.scene.remove(this.group)
 
     this.geomIds?.clear()
+    this._initialized = false
   }
 }

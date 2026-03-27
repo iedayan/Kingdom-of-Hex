@@ -1,7 +1,7 @@
 import WFCWorker from '../workers/wfc.worker.js?worker'
 import { HexWFCAdjacencyRules, CUBE_DIRS, cubeKey, parseCubeKey } from './HexWFCCore.js'
 import { TILE_LIST, HexDir, HexOpposite, rotateHexEdges, LEVELS_COUNT } from './HexTileData.js'
-import { log } from '../App.js'
+import { log } from '../core/logging/gameConsole.js'
 import { getSeed } from '../SeededRandom.js'
 
 /**

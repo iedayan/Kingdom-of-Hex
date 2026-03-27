@@ -7,7 +7,7 @@ import { MountainMeshNames } from '../src/hexmap/DecorationDefs.js'
 import { TileType } from '../src/hexmap/HexTileData.js'
 
 function createDecorations() {
-  return new Decorations({ add() {}, remove() {} })
+  return new Decorations({ add() {}, remove() {}, userData: { hexGrid: {} } })
 }
 
 test('clearDecorationsAt removes windmill fan tracking and stops its tween', () => {
