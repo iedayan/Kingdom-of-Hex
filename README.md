@@ -109,4 +109,6 @@ The project is in a strong prototype-to-production transition zone:
 
 ## License
 
-[MIT](LICENSE)
+Code in this repository is released under [MIT](LICENSE).
+
+Bundled art, audio, models, and promo media may carry separate usage terms. See [ASSET_POLICY.md](ASSET_POLICY.md).
