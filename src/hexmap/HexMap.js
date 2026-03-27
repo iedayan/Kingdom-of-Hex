@@ -27,8 +27,9 @@ import {
 } from './HexGridConnector.js'
 import { initGlobalTreeNoise, rebuildNoiseTables, Decorations } from './Decorations.js'
 import { Water } from './effects/Water.js'
-import { random, setSeed } from '../SeededRandom.js'
+import { random, setSeed, randomSeed } from '../SeededRandom.js'
 import { Sounds } from '../lib/Sounds.js'
+import { summarizeWorldState, mergeWeightBiases } from '../game/KingdomDirector.js'
 
 const LEVEL_HEIGHT = 0.5
 const TILE_SURFACE = 1
@@ -113,6 +114,7 @@ export class HexMap {
     this._wfcIdleResolve = null
     this._autoBuilding = false
     this._waterSideIndex = null
+    this.campaignHooks = null
 
     // Convenience alias
     this.hexWfcRules = null
@@ -360,7 +362,12 @@ export class HexMap {
     this._buildCancelled = false
     this.onBeforeTilesChanged?.()
 
-    const ctx = this._setupPopulateContext(grid, options)
+    const mergedOptions = this._mergeSolveOptions({
+      actionType: 'expand',
+      grid,
+      options,
+    })
+    const ctx = this._setupPopulateContext(grid, mergedOptions)
     log(`[${ctx.gridKey}] POPULATING GRID (${ctx.initialFixedCount} neighbors)`, 'color: blue')
     await setStatusAsync(`[${ctx.gridKey}] Solving WFC...`)
 
@@ -370,7 +377,27 @@ export class HexMap {
 
     if (this._buildCancelled) return
 
-    return this._applyPopulateResults(grid, ctx, solveResult, options)
+    return this._applyPopulateResults(grid, ctx, solveResult, mergedOptions)
+  }
+
+  _mergeSolveOptions(context = {}) {
+    const campaignOptions = this.campaignHooks?.getSolveOptions?.(context) ?? {}
+    const localOptions = context.options ?? {}
+    const merged = { ...campaignOptions, ...localOptions }
+
+    merged.weightBiases = mergeWeightBiases(
+      campaignOptions.weightBiases,
+      localOptions.weightBiases
+    )
+
+    if (campaignOptions.initialCollapses || localOptions.initialCollapses) {
+      merged.initialCollapses = [
+        ...(campaignOptions.initialCollapses ?? []),
+        ...(localOptions.initialCollapses ?? []),
+      ]
+    }
+
+    return merged
   }
 
   /** Build the context object used by _runWfcWithRecovery and _applyPopulateResults */
@@ -496,7 +523,10 @@ export class HexMap {
           .filter(c => this.globalCells.has(cubeKey(c.q, c.r, c.s)))
         const localFixedCells = this.getFixedCellsForRegion(localSolveCells)
         const localResult = await this.solveWfcAsync(localSolveCells, localFixedCells, {
-          tileTypes: ctx.tileTypes, maxTries: 5, quiet: true,
+          tileTypes: ctx.tileTypes,
+          maxTries: 5,
+          quiet: true,
+          weightBiases: ctx.options?.weightBiases ?? null,
         })
 
         if (!localResult.success || !localResult.tiles) {
@@ -705,7 +735,7 @@ export class HexMap {
 
     // Add results to global cell map (exclude unfixed cells — they stay in their source grid)
     const unfixedSet = new Set([...unfixedKeys, ...ctx.persistedUnfixedKeys])
-    const resultForGlobal = unfixedSet.size > 0
+      const resultForGlobal = unfixedSet.size > 0
       ? result.filter(t => !unfixedSet.has(cubeKey(t.q, t.r, t.s)))
       : result
     this.addToGlobalCells(ctx.gridKey, resultForGlobal)
@@ -738,6 +768,12 @@ export class HexMap {
     // Notify listeners that tiles changed (for coast mask rebuild)
     // Pass animationDone promise so caller can wait for drop animation to finish
     this.onTilesChanged?.(grid.animationDone)
+    this.campaignHooks?.afterGridPopulated?.({
+      grid,
+      summary: this.getKingdomSummary(),
+      result: resultForGrid,
+      options,
+    })
 
     return animDuration
   }
@@ -1139,9 +1175,9 @@ export class HexMap {
     const tileTypes = this.getDefaultTileTypes()
     const result = await this.solveWfcAsync(allSolveCells, [], {
       tileTypes,
-      weights: {},
       maxTries: 5,
       initialCollapses,
+      weightBiases: options.weightBiases ?? null,
       gridId: 'BUILD_ALL',
       attemptNum: 1,
     })
@@ -1376,11 +1412,18 @@ export class HexMap {
 
   queueRebuildWfc(globalCubeCoords, global, def) {
     if (this._autoBuilding) return
-    this._enqueueWfc(() => this._runRebuildWfc({ globalCubeCoords, global, def }))
+    this._enqueueWfc(() => this._runRebuildWfc({ globalCubeCoords, global, def, source: 'player' }))
   }
 
-  async _runRebuildWfc({ globalCubeCoords, global, def }) {
-    log(`[REBUILD] (${global.col},${global.row}) ${def?.name || '?'} — rebuild WFC solve`, 'color: blue')
+  async _runRebuildWfc({ globalCubeCoords, global, def, source = 'player', plan = null }) {
+    const prefix = source === 'threat' ? '[INCURSION]' : '[REBUILD]'
+    const solveOptions = this._mergeSolveOptions({
+      actionType: 'rebuild',
+      source,
+      target: this.globalCells.get(cubeKey(globalCubeCoords.q, globalCubeCoords.r, globalCubeCoords.s)),
+      options: { weightBiases: plan?.weightBiases ?? null },
+    })
+    log(`${prefix} (${global.col},${global.row}) ${def?.name || '?'} — rebuild WFC solve`, source === 'threat' ? 'color: #ff8c4d' : 'color: blue')
 
     const solveCells = cubeCoordsInRadius(
       globalCubeCoords.q, globalCubeCoords.r, globalCubeCoords.s, 2
@@ -1392,6 +1435,7 @@ export class HexMap {
     const result = await this.solveWfcAsync(solveCells, fixedCells, {
       tileTypes,
       maxTries: 5,
+      weightBiases: solveOptions.weightBiases ?? null,
     })
 
     if (result.success && result.tiles) {
@@ -1447,13 +1491,44 @@ export class HexMap {
       const totalTiles = Array.from(changedTilesPerGrid.values()).reduce((sum, t) => sum + t.length, 0)
       const animDone = new Promise(resolve => setTimeout(resolve, totalTiles * TILE_STAGGER + 400))
       this.onTilesChanged?.(animDone)
+      this.campaignHooks?.afterRegionRebuilt?.({
+        source,
+        summary: this.getKingdomSummary(),
+        result: result.tiles,
+        plan,
+      })
 
-      log(`[REBUILD] (${global.col},${global.row}) solved ${result.tiles.length} tiles`, 'color: green')
+      log(`${prefix} (${global.col},${global.row}) solved ${result.tiles.length} tiles`, 'color: green')
       Sounds.play('pop', 1.0, 0.15)
+      return true
     } else {
-      log(`[REBUILD] (${global.col},${global.row}) ${def?.name || '?'} — rebuild WFC failed`, 'color: red')
+      log(`${prefix} (${global.col},${global.row}) ${def?.name || '?'} — rebuild WFC failed`, 'color: red')
       Sounds.play('incorrect')
+      this.campaignHooks?.afterRegionRebuilt?.({
+        source,
+        summary: this.getKingdomSummary(),
+        result: [],
+        plan,
+        failed: true,
+      })
+      return false
     }
+  }
+
+  async triggerCampaignIncursion(plan) {
+    if (!plan?.targetKey || this._autoBuilding) return false
+    const target = this.globalCells.get(plan.targetKey)
+    if (!target) return false
+
+    const global = cubeToOffset(target.q, target.r, target.s)
+    const def = TILE_LIST[target.type]
+    return this._runRebuildWfc({
+      globalCubeCoords: target,
+      global,
+      def,
+      source: 'threat',
+      plan,
+    })
   }
 
   // ---- HexMapInteraction delegators ----
@@ -1469,7 +1544,7 @@ export class HexMap {
     const results = []
 
     for (let i = 0; i < runs; i++) {
-      const seed = Math.floor(Math.random() * 100000)
+      const seed = randomSeed()
       log(`[BENCHMARK] Run ${i + 1}/${runs} (seed: ${seed})`, 'color: blue')
 
       setSeed(seed)
@@ -1509,7 +1584,7 @@ export class HexMap {
     const results = []
 
     for (let i = 0; i < runs; i++) {
-      const seed = Math.floor(Math.random() * 100000)
+      const seed = randomSeed()
       log(`[BENCHMARK-BA] Run ${i + 1}/${runs} (seed: ${seed})`, 'color: blue')
 
       setSeed(seed)
@@ -1694,6 +1769,13 @@ export class HexMap {
     return this.grids.get('0,0')?.hexGrid ?? null
   }
 
+  getKingdomSummary() {
+    return summarizeWorldState({
+      globalCells: this.globalCells,
+      grids: this.grids,
+    })
+  }
+
   /**
    * Get WFC grid radius
    */
@@ -1713,6 +1795,7 @@ export class HexMap {
   _updateColorNode() { this.debug._updateColorNode() }
   updateTileColors() { this.debug.updateTileColors() }
   getOverlayObjects() { return this.debug.getOverlayObjects() }
+  setCampaignHooks(hooks) { this.campaignHooks = hooks }
   getWaterObjects() {
     const water = []
     if (this.water?.mesh) water.push(this.water.mesh)

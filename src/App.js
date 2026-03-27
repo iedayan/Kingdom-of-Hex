@@ -18,8 +18,15 @@ import { HexMap } from './hexmap/HexMap.js'
 import { Lighting } from './Lighting.js'
 import { PostFX } from './PostFX.js'
 import { WavesMask } from './hexmap/effects/WavesMask.js'
-import { setSeed } from './SeededRandom.js'
+import { setSeed, randomSeed } from './SeededRandom.js'
+import { rebuildNoiseTables } from './hexmap/Decorations.js'
 import { LEVELS_COUNT } from './hexmap/HexTileData.js'
+import {
+  KingdomDirector,
+  KINGDOM_IDENTITIES,
+  THREAT_PROFILES,
+  parseKingdomConfig,
+} from './game/KingdomDirector.js'
 import gsap from 'gsap'
 
 // Global status update function
@@ -66,6 +73,13 @@ export class App {
     this.params = null
     this.cssRenderer = null  // CSS2DRenderer for debug labels
     this.buildMode = false  // false = Move (camera only), true = Build (click to WFC)
+    this.currentSeed = null
+    this.kingdom = null
+    this.selectedRealmId = null
+    this.selectedThreatId = null
+    this._buildAllOrder = [
+      [0,0],[0,-1],[1,-1],[1,0],[0,1],[-1,0],[-1,-1],[-1,-2],[0,-2],[1,-2],[2,-1],[2,0],[2,1],[1,1],[0,2],[-1,1],[-2,1],[-2,0],[-2,-1]
+    ]
 
     if (App.instance != null) {
       console.warn('App instance already exists')
@@ -80,8 +94,18 @@ export class App {
       return
     }
 
-    const seed = Math.floor(Math.random() * 100000)
+    const runConfig = parseKingdomConfig(window.location.search)
+    const seed = runConfig.seed ?? randomSeed()
+    this.currentSeed = seed
     setSeed(seed)
+    rebuildNoiseTables()
+    this.kingdom = new KingdomDirector({
+      seed,
+      realmId: runConfig.realmId,
+      threatId: runConfig.threatId,
+    })
+    this.selectedRealmId = this.kingdom.realm.id
+    this.selectedThreatId = this.kingdom.threat.id
     console.log(`%c[SEED] ${seed}`, 'color: black')
     console.log(`%c[LEVELS] ${LEVELS_COUNT}`, 'color: black')
     this.renderer = new WebGPURenderer({ canvas: this.canvas, antialias: true })
@@ -104,7 +128,7 @@ export class App {
     this.initStatusOverlay()
     this.initModeButtons()
 
-    this.seedElement.textContent = `seed: ${seed}`
+    this.seedElement.textContent = `${seed}`
 
     this.onResize()
     this.pointerHandler = new Pointer(
@@ -122,6 +146,21 @@ export class App {
 
     await this.lighting.init()
     await this.city.init()
+    this.city.setCampaignHooks({
+      getSolveOptions: (context) => this.kingdom?.getSolveOptions(context),
+      afterGridPopulated: (payload) => { void this.onKingdomAction('expand', payload) },
+      afterRegionRebuilt: (payload) => {
+        if (payload.source === 'player') {
+          void this.onKingdomAction('rebuild', payload)
+          return
+        }
+        this.kingdom?.syncWorld(payload.summary)
+        this.renderKingdomState()
+      },
+    })
+    this.kingdom.syncWorld(this.city.getKingdomSummary())
+    this.renderKingdomState()
+    this.updateShareUrl()
 
     // Water mask: swap tile materials to unlit B&W mask material for mask RT render
     this._savedMats = new Map()
@@ -406,7 +445,143 @@ export class App {
 
   initStatusOverlay() {
     this.statusElement = document.getElementById('status-text')
-    this.seedElement = { textContent: '' } // no-op stub (seed hidden in HTML)
+    const panel = document.createElement('section')
+    panel.id = 'kingdom-panel'
+    panel.style.cssText = `
+      position: fixed;
+      top: 12px;
+      right: 12px;
+      width: min(360px, calc(100vw - 24px));
+      padding: 16px 16px 14px;
+      border-radius: 18px;
+      border: 1px solid rgba(224, 203, 159, 0.28);
+      background:
+        linear-gradient(180deg, rgba(27, 33, 45, 0.9), rgba(13, 17, 26, 0.88)),
+        radial-gradient(circle at top, rgba(182, 148, 85, 0.12), transparent 58%);
+      color: rgba(245, 239, 227, 0.94);
+      box-shadow: 0 18px 60px rgba(0, 0, 0, 0.42);
+      backdrop-filter: blur(12px);
+      z-index: 1000;
+      pointer-events: auto;
+      font-family: 'Inter', sans-serif;
+    `
+    panel.innerHTML = `
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;">
+        <div>
+          <div style="font-size:11px;letter-spacing:0.18em;text-transform:uppercase;color:rgba(245,239,227,0.54);">Kingdom Mode</div>
+          <div data-role="realm-name" style="margin-top:4px;font-size:24px;font-weight:600;line-height:1.05;"></div>
+          <div data-role="realm-tagline" style="margin-top:6px;font-size:12px;line-height:1.45;color:rgba(245,239,227,0.72);"></div>
+        </div>
+        <div data-role="status-pill" style="padding:6px 10px;border-radius:999px;border:1px solid rgba(245,239,227,0.14);font-size:11px;letter-spacing:0.1em;text-transform:uppercase;color:rgba(245,239,227,0.72);">Active</div>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-top:14px;">
+        <div style="padding:10px;border-radius:12px;background:rgba(255,255,255,0.045);">
+          <div style="font-size:11px;color:rgba(245,239,227,0.54);text-transform:uppercase;">Seed</div>
+          <div data-role="seed" style="margin-top:4px;font-size:16px;font-weight:600;"></div>
+        </div>
+        <div style="padding:10px;border-radius:12px;background:rgba(255,255,255,0.045);">
+          <div style="font-size:11px;color:rgba(245,239,227,0.54);text-transform:uppercase;">Prestige</div>
+          <div data-role="prestige" style="margin-top:4px;font-size:16px;font-weight:600;"></div>
+        </div>
+        <div style="padding:10px;border-radius:12px;background:rgba(255,255,255,0.045);">
+          <div style="font-size:11px;color:rgba(245,239,227,0.54);text-transform:uppercase;">Threat</div>
+          <div data-role="threat" style="margin-top:4px;font-size:16px;font-weight:600;"></div>
+        </div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:14px;">
+        <label style="display:flex;flex-direction:column;gap:6px;font-size:11px;letter-spacing:0.08em;text-transform:uppercase;color:rgba(245,239,227,0.54);">
+          Realm
+          <select data-role="realm-select" style="padding:10px 12px;border-radius:12px;border:1px solid rgba(245,239,227,0.16);background:rgba(9,12,19,0.75);color:inherit;font:inherit;text-transform:none;"></select>
+        </label>
+        <label style="display:flex;flex-direction:column;gap:6px;font-size:11px;letter-spacing:0.08em;text-transform:uppercase;color:rgba(245,239,227,0.54);">
+          Threat
+          <select data-role="threat-select" style="padding:10px 12px;border-radius:12px;border:1px solid rgba(245,239,227,0.16);background:rgba(9,12,19,0.75);color:inherit;font:inherit;text-transform:none;"></select>
+        </label>
+      </div>
+      <div style="margin-top:14px;padding:12px;border-radius:14px;background:rgba(255,255,255,0.045);">
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;">
+          <div style="font-size:11px;letter-spacing:0.08em;text-transform:uppercase;color:rgba(245,239,227,0.54);">Victory Path</div>
+          <div data-role="turn" style="font-size:12px;color:rgba(245,239,227,0.72);"></div>
+        </div>
+        <div data-role="objective-label" style="margin-top:8px;font-size:16px;font-weight:600;"></div>
+        <div data-role="objective-progress" style="margin-top:6px;font-size:12px;line-height:1.5;color:rgba(245,239,227,0.74);"></div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:14px;">
+        <div style="padding:12px;border-radius:14px;background:rgba(255,255,255,0.045);">
+          <div style="font-size:11px;letter-spacing:0.08em;text-transform:uppercase;color:rgba(245,239,227,0.54);">Active Effects</div>
+          <div data-role="effects" style="margin-top:8px;font-size:12px;line-height:1.5;color:rgba(245,239,227,0.72);"></div>
+        </div>
+        <div style="padding:12px;border-radius:14px;background:rgba(255,255,255,0.045);">
+          <div style="font-size:11px;letter-spacing:0.08em;text-transform:uppercase;color:rgba(245,239,227,0.54);">War Room</div>
+          <div data-role="messages" style="margin-top:8px;font-size:12px;line-height:1.5;color:rgba(245,239,227,0.72);"></div>
+        </div>
+      </div>
+      <div style="display:flex;gap:8px;margin-top:14px;flex-wrap:wrap;">
+        <button data-role="reset-run" style="flex:1 1 130px;padding:10px 12px;border-radius:12px;border:1px solid rgba(224,203,159,0.22);background:rgba(191,151,84,0.12);color:inherit;font:inherit;cursor:pointer;">New Kingdom</button>
+        <button data-role="new-seed" style="flex:1 1 100px;padding:10px 12px;border-radius:12px;border:1px solid rgba(245,239,227,0.14);background:rgba(255,255,255,0.06);color:inherit;font:inherit;cursor:pointer;">New Seed</button>
+        <button data-role="copy-link" style="flex:1 1 100px;padding:10px 12px;border-radius:12px;border:1px solid rgba(245,239,227,0.14);background:rgba(255,255,255,0.06);color:inherit;font:inherit;cursor:pointer;">Copy Link</button>
+      </div>
+    `
+    document.body.appendChild(panel)
+    panel.addEventListener('pointerdown', (e) => e.stopPropagation())
+    panel.addEventListener('wheel', (e) => e.stopPropagation(), { passive: true })
+
+    this.kingdomPanel = panel
+    this.seedElement = panel.querySelector('[data-role="seed"]')
+    this.kingdomRealmName = panel.querySelector('[data-role="realm-name"]')
+    this.kingdomRealmTagline = panel.querySelector('[data-role="realm-tagline"]')
+    this.kingdomStatusPill = panel.querySelector('[data-role="status-pill"]')
+    this.kingdomPrestige = panel.querySelector('[data-role="prestige"]')
+    this.kingdomThreat = panel.querySelector('[data-role="threat"]')
+    this.kingdomTurn = panel.querySelector('[data-role="turn"]')
+    this.kingdomObjectiveLabel = panel.querySelector('[data-role="objective-label"]')
+    this.kingdomObjectiveProgress = panel.querySelector('[data-role="objective-progress"]')
+    this.kingdomEffects = panel.querySelector('[data-role="effects"]')
+    this.kingdomMessages = panel.querySelector('[data-role="messages"]')
+    this.realmSelect = panel.querySelector('[data-role="realm-select"]')
+    this.threatSelect = panel.querySelector('[data-role="threat-select"]')
+
+    for (const realm of KINGDOM_IDENTITIES) {
+      const option = document.createElement('option')
+      option.value = realm.id
+      option.textContent = realm.label
+      this.realmSelect.appendChild(option)
+    }
+    for (const threat of THREAT_PROFILES) {
+      const option = document.createElement('option')
+      option.value = threat.id
+      option.textContent = threat.label
+      this.threatSelect.appendChild(option)
+    }
+
+    this.realmSelect.value = this.selectedRealmId ?? this.kingdom?.realm?.id ?? KINGDOM_IDENTITIES[0].id
+    this.threatSelect.value = this.selectedThreatId ?? this.kingdom?.threat?.id ?? THREAT_PROFILES[0].id
+
+    this.realmSelect.addEventListener('change', () => {
+      this.selectedRealmId = this.realmSelect.value
+      void this.restartKingdom({ realmId: this.selectedRealmId, threatId: this.selectedThreatId, seed: this.currentSeed })
+    })
+    this.threatSelect.addEventListener('change', () => {
+      this.selectedThreatId = this.threatSelect.value
+      void this.restartKingdom({ realmId: this.selectedRealmId, threatId: this.selectedThreatId, seed: this.currentSeed })
+    })
+    panel.querySelector('[data-role="reset-run"]').addEventListener('click', () => {
+      void this.restartKingdom({ realmId: this.selectedRealmId, threatId: this.selectedThreatId, seed: this.currentSeed })
+    })
+    panel.querySelector('[data-role="new-seed"]').addEventListener('click', () => {
+      void this.restartKingdom({ realmId: this.selectedRealmId, threatId: this.selectedThreatId, seed: randomSeed() })
+    })
+    panel.querySelector('[data-role="copy-link"]').addEventListener('click', async () => {
+      this.updateShareUrl()
+      try {
+        await navigator.clipboard.writeText(window.location.href)
+        this.kingdom?.rememberMessage('Run link copied to clipboard.')
+        this.renderKingdomState()
+      } catch (_error) {
+        this.kingdom?.rememberMessage('Clipboard access failed.')
+        this.renderKingdomState()
+      }
+    })
   }
 
   initModeButtons() {
@@ -496,16 +671,10 @@ export class App {
     // Action buttons
     const actions = [
       { label: 'Build All', action: () => {
-        this.city.autoBuild([
-          [0,0],[0,-1],[1,-1],[1,0],[0,1],[-1,0],[-1,-1],[-1,-2],[0,-2],[1,-2],[2,-1],[2,0],[2,1],[1,1],[0,2],[-1,1],[-2,1],[-2,0],[-2,-1]
-        ])
+        this.city.autoBuild(this._buildAllOrder)
       }},
       { label: 'Clear All', action: () => {
-        this.city.reset()
-        this.city.setHelpersVisible(this.params.debug.hexGrid)
-        this.perspCamera.position.set(0, 100, 58.5)
-        this.controls.target.set(0, 1, 0)
-        this.controls.update()
+        void this.restartKingdom({ realmId: this.selectedRealmId, threatId: this.selectedThreatId, seed: this.currentSeed })
       }},
     ]
 
@@ -544,6 +713,95 @@ export class App {
       updateGuiBtn()
     })
     container.appendChild(guiBtn)
+  }
+
+  updateShareUrl() {
+    const params = new URLSearchParams(window.location.search)
+    params.set('seed', `${this.currentSeed}`)
+    params.set('realm', this.selectedRealmId)
+    params.set('threat', this.selectedThreatId)
+    const nextUrl = `${window.location.pathname}?${params.toString()}`
+    window.history.replaceState({}, '', nextUrl)
+  }
+
+  renderKingdomState(snapshot = this.kingdom?.getSnapshot()) {
+    if (!snapshot || !this.kingdomPanel) return
+
+    this.seedElement.textContent = `${snapshot.seed}`
+    this.kingdomRealmName.textContent = snapshot.realm.label
+    this.kingdomRealmTagline.textContent = snapshot.realm.tagline
+    this.kingdomPrestige.textContent = `${snapshot.prestige}`
+    this.kingdomThreat.textContent = `${snapshot.threatMeter}/12`
+    this.kingdomTurn.textContent = `Turn ${snapshot.turn}`
+    this.kingdomObjectiveLabel.textContent = snapshot.objective.label
+    this.kingdomObjectiveProgress.textContent = snapshot.objectiveText
+    this.kingdomEffects.textContent = snapshot.activeEffects.length > 0
+      ? snapshot.activeEffects.map(effect => `${effect.label} (${effect.remainingTurns})`).join(' | ')
+      : 'No temporary realm effects.'
+    this.kingdomMessages.textContent = snapshot.messages.slice(0, 3).join(' | ')
+    this.realmSelect.value = snapshot.realm.id
+    this.threatSelect.value = snapshot.threat.id
+
+    const statusMap = {
+      active: { label: 'Active', color: 'rgba(245,239,227,0.72)', border: 'rgba(245,239,227,0.14)' },
+      won: { label: 'Victory', color: '#7fe0a6', border: 'rgba(127,224,166,0.34)' },
+      lost: { label: 'Broken', color: '#ff9f83', border: 'rgba(255,159,131,0.34)' },
+    }
+    const status = statusMap[snapshot.status] ?? statusMap.active
+    this.kingdomStatusPill.textContent = status.label
+    this.kingdomStatusPill.style.color = status.color
+    this.kingdomStatusPill.style.borderColor = status.border
+  }
+
+  async restartKingdom({
+    realmId = this.selectedRealmId,
+    threatId = this.selectedThreatId,
+    seed = this.currentSeed,
+  } = {}) {
+    this.currentSeed = seed
+    this.selectedRealmId = realmId
+    this.selectedThreatId = threatId
+    setSeed(seed)
+    rebuildNoiseTables()
+    this.kingdom.reset({ seed, realmId, threatId })
+    this.selectedRealmId = this.kingdom.realm.id
+    this.selectedThreatId = this.kingdom.threat.id
+    this.updateShareUrl()
+
+    if (this.city) {
+      await this.city.reset()
+      this.city.setHelpersVisible(this.params.debug.hexGrid)
+      this.perspCamera.position.set(0, 100, 58.5)
+      this.controls.target.set(0, 1, 0)
+      this.controls.update()
+      this.kingdom.syncWorld(this.city.getKingdomSummary())
+    }
+
+    this.renderKingdomState()
+  }
+
+  async onKingdomAction(actionType, payload) {
+    if (!this.kingdom || this.city?._autoBuilding) {
+      this.kingdom?.syncWorld(payload.summary)
+      this.renderKingdomState()
+      return
+    }
+
+    const result = this.kingdom.applyAction({
+      actionType,
+      summary: payload.summary,
+      cells: [...this.city.globalCells.values()],
+    })
+
+    this.renderKingdomState(result.state)
+
+    if (result.incursion) {
+      await this.city.triggerCampaignIncursion(result.incursion)
+      this.kingdom.syncWorld(this.city.getKingdomSummary())
+      this.renderKingdomState()
+    }
+
+    this.updateShareUrl()
   }
 
   onResize(_e, toSize) {

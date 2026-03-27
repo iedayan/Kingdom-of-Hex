@@ -238,6 +238,7 @@ export class WFCManager {
       tileTypes: ctx.tileTypes,
       maxTries: 2,
       initialCollapses: ctx.initialCollapses,
+      weightBiases: ctx.options?.weightBiases ?? null,
       gridId: ctx.gridKey,
       attemptNum: ctx.attempt,
       neighborCells: activeNeighborCells,

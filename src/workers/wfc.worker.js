@@ -29,6 +29,7 @@ class HexWFCSolver {
     this.options = {
       maxTries: options.maxTries ?? 2,
       tileTypes: options.tileTypes ?? null,
+      weightBiases: options.weightBiases ?? null,
       log: options.log ?? (() => {}),
       attemptNum: options.attemptNum ?? 0,
       gridId: options.gridId ?? '',
@@ -171,6 +172,12 @@ class HexWFCSolver {
     return minKey
   }
 
+  _stateWeight(state) {
+    const baseWeight = TILE_LIST[state.type]?.weight ?? 1
+    const multiplier = this.options.weightBiases?.[state.type] ?? 1
+    return baseWeight * multiplier
+  }
+
   collapse(key) {
     const cell = this.cells.get(key)
     if (!cell || cell.collapsed || cell.possibilities.size === 0) return false
@@ -178,7 +185,7 @@ class HexWFCSolver {
     const possArray = Array.from(cell.possibilities)
     const weights = possArray.map(k => {
       const state = HexWFCCell.parseKey(k)
-      return TILE_LIST[state.type]?.weight ?? 1
+      return this._stateWeight(state)
     })
     const totalWeight = weights.reduce((a, b) => a + b, 0)
     let r = random() * totalWeight
@@ -267,7 +274,7 @@ class HexWFCSolver {
 
     const weights = available.map(k => {
       const state = HexWFCCell.parseKey(k)
-      return TILE_LIST[state.type]?.weight ?? 1
+      return this._stateWeight(state)
     })
     const total = weights.reduce((a, b) => a + b, 0)
     let r = random() * total
