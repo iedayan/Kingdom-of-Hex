@@ -135,6 +135,7 @@ export class KillFeed {
       goblin_raider: '🗡️',
       goblin_brute: '🪓',
       goblin_slinger: '🏹',
+      goblin_warlord: '👑',
       tower: '🏰',
     }
     return icons[type] || '⚔️'

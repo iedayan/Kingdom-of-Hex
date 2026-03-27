@@ -83,6 +83,15 @@ export const UNITS = {
     cost: 0,
     sight: 1,
   },
+  goblin_warlord: {
+    hp: 16,
+    maxHp: 16,
+    atk: 6,
+    range: 1,
+    mp: 1,
+    cost: 0,
+    sight: 1,
+  },
 }
 
 export const COMBAT = {
@@ -146,6 +155,14 @@ export const COMBAT = {
       farm: 1,
       lumberjack: 1,
     },
+    goblin_warlord: {
+      knight: 2,
+      archer: 2,
+      scout: 2,
+      market: 2,
+      library: 2,
+      tower: 2,
+    },
   },
   TARGET_PRIORITIES: {
     tower: 6,
@@ -163,6 +180,7 @@ export const COMBAT = {
     goblin_raider: 22,
     goblin_slinger: 24,
     goblin_brute: 32,
+    goblin_warlord: 48,
   },
 }
 

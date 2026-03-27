@@ -69,6 +69,13 @@ describe('CombatSystem', () => {
       await combat.attack('0,0,0', '1,0,-1')
       expect(goblin.mpRemaining).toBe(2)
     })
+
+    it('prevents attacks outside of range', async () => {
+      session.spawnUnit('0,0,0', 'knight', 'player')
+      session.spawnUnit('3,0,-3', 'goblin', 'enemy')
+      await combat.attack('0,0,0', '3,0,-3')
+      expect(session.objects.get('3,0,-3').hp).toBe(6)
+    })
   })
 
   describe('projectile firing', () => {
@@ -181,6 +188,25 @@ describe('CombatSystem', () => {
       session.spawnUnit('0,0,0', 'knight', 'player')
       await combat.attack('0,0,0', '999,0,-999')
       expect(session.objects.get('0,0,0')).toBeDefined()
+    })
+  })
+
+  describe('previewAttack', () => {
+    it('reports lethal damage and remaining hp', () => {
+      session.spawnUnit('0,0,0', 'knight', 'player')
+      session.spawnUnit('1,0,-1', 'goblin', 'enemy')
+      const preview = combat.previewAttack('0,0,0', '1,0,-1')
+      expect(preview.canAttack).toBe(true)
+      expect(preview.lethal).toBe(true)
+      expect(preview.remainingHp).toBe(0)
+    })
+
+    it('reports out of range targets as invalid', () => {
+      session.spawnUnit('0,0,0', 'archer', 'player')
+      session.spawnUnit('4,0,-4', 'goblin', 'enemy')
+      const preview = combat.previewAttack('0,0,0', '4,0,-4')
+      expect(preview.canAttack).toBe(false)
+      expect(preview.reason).toContain('out of range')
     })
   })
 })

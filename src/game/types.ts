@@ -1,5 +1,13 @@
 export type Owner = 'player' | 'enemy'
-export type UnitType = 'scout' | 'archer' | 'knight' | 'goblin'
+export type UnitType =
+  | 'scout'
+  | 'archer'
+  | 'knight'
+  | 'goblin'
+  | 'goblin_raider'
+  | 'goblin_brute'
+  | 'goblin_slinger'
+  | 'goblin_warlord'
 export type BuildingType = 'lumberjack' | 'farm' | 'mine' | 'market' | 'tower' | 'library'
 export type ObjectType = UnitType | BuildingType
 export type BiomeType = 'temperate' | 'winter' | 'wasteland'

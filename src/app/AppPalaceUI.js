@@ -162,7 +162,7 @@ export function resumeGame(app, deps) {
 export function rebuildVisualsFromSave(app, deps) {
   const { globalToLocalGrid, HexUtils } = deps
   for (const [cKey, obj] of app.game.objects.entries()) {
-    if (['scout', 'archer', 'knight', 'goblin', 'goblin_raider', 'goblin_brute', 'goblin_slinger'].includes(obj.type)) {
+    if (['scout', 'archer', 'knight', 'goblin', 'goblin_raider', 'goblin_brute', 'goblin_slinger', 'goblin_warlord'].includes(obj.type)) {
       app.unitManager.spawnUnit(cKey, obj.type, obj.owner)
       continue
     }

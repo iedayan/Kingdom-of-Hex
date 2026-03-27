@@ -642,6 +642,32 @@ export class HexMapInteraction {
               }
 
               unitManager.setPreview(selectedId, snapPos, isValid)
+            } else if (game && this.selectedUnitKey) {
+              unitManager?.setPreview(null)
+              const actingUnit = game.objects.get(this.selectedUnitKey)
+              if (hoveredObj && hoveredObj.owner !== actingUnit?.owner) {
+                const preview = game._combatSystem?.previewAttack?.(this.selectedUnitKey, hoveredKey)
+                if (preview?.canAttack) {
+                  const text = `Attack ${this._describeObject(hoveredObj)} for ${preview.damage} (${preview.distance}/${preview.range})${preview.lethal ? ' KO' : `, ${preview.remainingHp} HP left`}`
+                  App.instance.gameHud?.setContextHint(text, preview.lethal ? 'success' : 'info')
+                } else if (preview?.reason) {
+                  App.instance.gameHud?.setContextHint(preview.reason, 'error')
+                }
+              } else if (!hoveredObj) {
+                const pathData = HexUtils.findPath(this.selectedUnitKey, hoveredKey, App.instance)
+                const mpRemaining = typeof actingUnit?.mpRemaining === 'number' ? actingUnit.mpRemaining : (typeof actingUnit?.mp === 'number' ? actingUnit.mp : 0)
+                if (pathData) {
+                  const tone = pathData.cost <= mpRemaining ? 'success' : 'error'
+                  const suffix = pathData.cost <= mpRemaining ? '' : ' · out of reach'
+                  App.instance.gameHud?.setContextHint(`Move costs ${pathData.cost}/${mpRemaining} MP${suffix}`, tone)
+                } else {
+                  App.instance.gameHud?.setContextHint('')
+                }
+              } else if (occupiedMsg) {
+                App.instance.gameHud?.setContextHint(occupiedMsg, 'info')
+              } else {
+                App.instance.gameHud?.setContextHint('')
+              }
             } else if (unitManager) {
               unitManager.setPreview(null)
               if (occupiedMsg) App.instance.gameHud?.setContextHint(occupiedMsg, 'info')

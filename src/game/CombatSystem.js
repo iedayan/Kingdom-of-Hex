@@ -12,23 +12,22 @@ export class CombatSystem {
   }
 
   async attack(attackerKey, targetKey) {
-    const attacker = this.session.objects.get(attackerKey)
-    const target = this.session.objects.get(targetKey)
-    if (!attacker || !target) return
-
-    if (!this._canAttack(attacker)) {
-      log('[COMBAT] No actions remaining for attack.', 'color: orange')
+    const preview = this.previewAttack(attackerKey, targetKey)
+    if (!preview.canAttack) {
+      log(`[COMBAT] ${preview.reason}`, 'color: orange')
       Sounds.play('incorrect', 1.0, 0.2, 0.8)
       return
     }
 
+    const attacker = preview.attacker
+    const target = preview.target
     this._spendAttackAction(attacker)
     log(`[COMBAT] ${attacker.owner} ${attacker.type} attacks ${target.owner} ${target.type}!`, 'color: red')
 
     EventBus.emit('screenShake', { intensity: 0.3, duration: 150 })
     await this._fireProjectile(attackerKey, targetKey, attacker)
 
-    const damage = getAttackDamage(this.session, this.app, attackerKey, attacker, targetKey, target)
+    const damage = preview.damage
     target.hp -= damage
 
     this._showDamageEffect(attacker, targetKey, target, damage)
@@ -49,6 +48,52 @@ export class CombatSystem {
     if (attacker.owner !== 'player') return true
     const remaining = attacker.mpRemaining ?? attacker.mp ?? 0
     return remaining > 0
+  }
+
+  previewAttack(attackerKey, targetKey) {
+    const attacker = this.session.objects.get(attackerKey)
+    const target = this.session.objects.get(targetKey)
+
+    if (!attacker || !target) {
+      return { canAttack: false, reason: 'Missing attacker or target.', attacker, target, damage: 0 }
+    }
+
+    if (attacker.owner === target.owner) {
+      return { canAttack: false, reason: 'Cannot attack allied units.', attacker, target, damage: 0 }
+    }
+
+    if (!this._canAttack(attacker)) {
+      return { canAttack: false, reason: 'No actions remaining for attack.', attacker, target, damage: 0 }
+    }
+
+    const range = Math.max(1, attacker.range || 1)
+    const distance = HexUtils.distance(attackerKey, targetKey)
+    if (distance > range) {
+      return {
+        canAttack: false,
+        reason: `Target out of range (${distance}/${range}).`,
+        attacker,
+        target,
+        damage: 0,
+        distance,
+        range,
+      }
+    }
+
+    const damage = getAttackDamage(this.session, this.app, attackerKey, attacker, targetKey, target)
+    const remainingHp = Math.max(0, (target.hp ?? 0) - damage)
+
+    return {
+      canAttack: true,
+      reason: '',
+      attacker,
+      target,
+      damage,
+      distance,
+      range,
+      lethal: damage >= (target.hp ?? Infinity),
+      remainingHp,
+    }
   }
 
   _spendAttackAction(attacker) {

@@ -23,4 +23,16 @@ describe('runContent wave planning', () => {
     expect(text).toContain('brute')
     expect(text).toContain('slinger')
   })
+
+  it('can escalate to a late-game warlord host', () => {
+    let found = false
+    for (let seed = 1; seed <= 64; seed++) {
+      const plan = buildEnemyWavePlan(35, { seed, harsherRaids: false })
+      if (plan.units.includes('goblin_warlord')) {
+        found = true
+        break
+      }
+    }
+    expect(found).toBe(true)
+  })
 })

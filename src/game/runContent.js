@@ -78,6 +78,15 @@ export const ENEMY_WAVE_ARCHETYPES = [
     weight: 0.9,
     units: ['goblin_brute', 'goblin_slinger', 'goblin_raider', 'goblin'],
   },
+  {
+    id: 'warlord-host',
+    name: 'Warlord Host',
+    flavor: 'A warlord leads a disciplined late-wave push.',
+    minTurn: 30,
+    maxTurn: 99,
+    weight: 0.75,
+    units: ['goblin_warlord', 'goblin_brute', 'goblin_slinger', 'goblin_raider'],
+  },
 ]
 
 function pickWaveArchetype(turn, rng) {

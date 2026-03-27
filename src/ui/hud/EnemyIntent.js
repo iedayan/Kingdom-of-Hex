@@ -193,6 +193,7 @@ export class EnemyIntentSystem {
       goblin_raider: '🗡️',
       goblin_brute: '🪓',
       goblin_slinger: '🏹',
+      goblin_warlord: '👑',
     }
     return icons[type] || '⚔️'
   }

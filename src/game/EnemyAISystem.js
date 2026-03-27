@@ -166,6 +166,8 @@ export class EnemyAISystem {
         return { distanceWeight: 9, towerWeight: 3, adjacentPlayerWeight: 1, adjacentStructureWeight: 4, rangedPressureWeight: 0.25 }
       case 'goblin_slinger':
         return { distanceWeight: 8, towerWeight: 7, adjacentPlayerWeight: -2, adjacentStructureWeight: 0.5, rangedPressureWeight: 3 }
+      case 'goblin_warlord':
+        return { distanceWeight: 7, towerWeight: 2, adjacentPlayerWeight: 2.5, adjacentStructureWeight: 4.5, rangedPressureWeight: 1.5 }
       default:
         return { distanceWeight: 10, towerWeight: 6, adjacentPlayerWeight: 0.5, adjacentStructureWeight: 1.5, rangedPressureWeight: 1 }
     }
