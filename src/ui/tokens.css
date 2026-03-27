@@ -543,6 +543,34 @@ body.hx-high-contrast {
   text-shadow: 0 0 8px rgba(212, 165, 116, 0.55);
 }
 
+.hx-objective-tag,
+.hx-raid-tag {
+  font-family: var(--hx-font-ui);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  color: #eff6ff;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.85);
+  padding: 3px 8px;
+  border-radius: var(--hx-radius-pill);
+  white-space: nowrap;
+  pointer-events: none;
+  backdrop-filter: blur(6px);
+}
+
+.hx-objective-tag {
+  background: rgba(15, 23, 42, 0.78);
+  border: 1px solid rgba(125, 211, 252, 0.45);
+  box-shadow: 0 0 16px rgba(125, 211, 252, 0.16);
+}
+
+.hx-raid-tag {
+  background: rgba(42, 17, 15, 0.82);
+  border: 1px solid rgba(255, 138, 101, 0.52);
+  box-shadow: 0 0 20px rgba(255, 138, 101, 0.22);
+  color: #fff1ec;
+}
+
 /* Buttons */
 .hx-btn {
   font-family: var(--hx-font-ui);

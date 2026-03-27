@@ -258,43 +258,17 @@ export class GameSession {
   }
 
   _processEnemyWave() {
-    const grassTiles = []
-    for (const grid of this.app.city.grids.values()) {
-      for (const tile of grid.hexTiles) {
-        if (tile.type === 0 || tile.type === 18 || tile.type === 21) {
-          const q = tile.gridX - grid.gridRadius + (grid.globalCenterCube?.q || 0)
-          const r = tile.gridZ - grid.gridRadius + (grid.globalCenterCube?.r || 0)
-          const s = -q-r
-          const key = `${q},${r},${s}`
-          if (!this.objects.has(key) && key !== CAPITAL_CUBE_KEY) grassTiles.push({ key, q, r, s })
-        }
-      }
-    }
-    if (grassTiles.length > 0) {
-      const plan = buildEnemyWavePlan(this.turn, {
-        harsherRaids: this.runRules.harsherRaids,
-        seed: this.seed,
-      })
-      const preferred = grassTiles.filter(t => {
-        const d = HexUtils.distance(t.key, CAPITAL_CUBE_KEY)
-        return d >= ENEMY.SPAWN_DISTANCE_MIN && d <= ENEMY.SPAWN_DISTANCE_MAX
-      })
-      const pool = preferred.length > 0 ? preferred : grassTiles
-      const rng = createRng(hashSeed(this.seed, 'wave-spawn', this.turn))
-      const available = [...pool]
+    const telegraph = this._buildWaveTelegraph(this.turn)
+    if (telegraph?.spawns?.length > 0) {
       const spawnedTypes = []
-      for (const unitType of plan.units) {
-        if (available.length === 0) break
-        const spawnAt = this._pickWaveSpawnTile(available, unitType, rng)
-        const idx = available.findIndex(tile => tile.key === spawnAt.key)
-        if (idx >= 0) available.splice(idx, 1)
-        this.spawnUnit(spawnAt.key, unitType, 'enemy')
-        spawnedTypes.push(unitType)
-        EventBus.emit('floatingText', { text: `${unitType.replace('goblin_', 'GOBLIN ').toUpperCase()} ARRIVES!`, position: spawnAt.key, color: 'var(--hx-danger)' })
+      for (const spawn of telegraph.spawns) {
+        this.spawnUnit(spawn.key, spawn.unitType, 'enemy')
+        spawnedTypes.push(spawn.unitType)
+        EventBus.emit('floatingText', { text: `${spawn.unitType.replace('goblin_', 'GOBLIN ').toUpperCase()} ARRIVES!`, position: spawn.key, color: 'var(--hx-danger)' })
       }
       if (spawnedTypes.length > 0) {
         EventBus.emit('notification', {
-          text: `${plan.name} incoming`,
+          text: `${telegraph.plan.name} incoming`,
           duration: 1800,
         })
       }
@@ -377,6 +351,17 @@ export class GameSession {
       turn: nextTurn,
       plan,
       summary: describeEnemyWavePlan(plan),
+    }
+  }
+
+  getUpcomingRaidTelegraph(limit = 3) {
+    const nextTurn = this.getNextWaveTurn()
+    const telegraph = this._buildWaveTelegraph(nextTurn)
+    if (!telegraph) return null
+    return {
+      turn: telegraph.turn,
+      plan: telegraph.plan,
+      spawns: telegraph.spawns.slice(0, limit),
     }
   }
 
@@ -669,6 +654,31 @@ export class GameSession {
     return this.lastTurnReport
   }
 
+  getObjectiveMarkerData(limit = 3) {
+    const active = this.objectives
+      .filter((objective) => !objective.completed && !objective.failed)
+      .sort((a, b) => a.deadline - b.deadline)
+
+    const byKey = new Map()
+    for (const objective of active) {
+      const key = this._getObjectiveFocusKey(objective)
+      if (!key) continue
+      const existing = byKey.get(key) || { key, labels: [], deadline: objective.deadline }
+      existing.labels.push(`${objective.title} T${objective.deadline}`)
+      existing.deadline = Math.min(existing.deadline, objective.deadline)
+      byKey.set(key, existing)
+    }
+
+    return Array.from(byKey.values())
+      .sort((a, b) => a.deadline - b.deadline)
+      .slice(0, limit)
+      .map((entry) => ({
+        key: entry.key,
+        label: entry.labels.slice(0, 2).join(' · '),
+        urgent: entry.deadline - this.turn <= 2,
+      }))
+  }
+
   win() {
     this.phase = 'won'
     saveManager.clearSession()
@@ -763,6 +773,70 @@ export class GameSession {
       research: null,
       notes: [],
       warnings: [],
+    }
+  }
+
+  _collectWaveSpawnCandidates() {
+    const grassTiles = []
+    for (const grid of this.app?.city?.grids?.values?.() || []) {
+      for (const tile of grid.hexTiles || []) {
+        if (tile.type === 0 || tile.type === 18 || tile.type === 21) {
+          const q = tile.gridX - grid.gridRadius + (grid.globalCenterCube?.q || 0)
+          const r = tile.gridZ - grid.gridRadius + (grid.globalCenterCube?.r || 0)
+          const s = -q - r
+          const key = `${q},${r},${s}`
+          if (!this.objects.has(key) && key !== CAPITAL_CUBE_KEY) grassTiles.push({ key, q, r, s })
+        }
+      }
+    }
+    if (grassTiles.length === 0) return []
+    const preferred = grassTiles.filter((tile) => {
+      const d = HexUtils.distance(tile.key, CAPITAL_CUBE_KEY)
+      return d >= ENEMY.SPAWN_DISTANCE_MIN && d <= ENEMY.SPAWN_DISTANCE_MAX
+    })
+    return preferred.length > 0 ? preferred : grassTiles
+  }
+
+  _buildWaveTelegraph(turn) {
+    const candidates = this._collectWaveSpawnCandidates()
+    if (candidates.length === 0) return null
+    const plan = buildEnemyWavePlan(turn, {
+      harsherRaids: this.runRules.harsherRaids,
+      seed: this.seed,
+    })
+    const rng = createRng(hashSeed(this.seed, 'wave-spawn', turn))
+    const available = [...candidates]
+    const spawns = []
+    for (const unitType of plan.units) {
+      if (available.length === 0) break
+      const spawnAt = this._pickWaveSpawnTile(available, unitType, rng)
+      const idx = available.findIndex((tile) => tile.key === spawnAt.key)
+      if (idx >= 0) available.splice(idx, 1)
+      spawns.push({ ...spawnAt, unitType })
+    }
+    return { turn, plan, spawns }
+  }
+
+  _getObjectiveFocusKey(objective) {
+    const entries = Array.from(this.objects.entries())
+    const pickFirst = (predicate) => entries.find(([key, obj]) => predicate(key, obj))?.[0] || CAPITAL_CUBE_KEY
+    switch (objective.id) {
+      case 'hold_choke':
+        return pickFirst((_, obj) => obj.owner === 'player' && obj.type === 'tower')
+      case 'clear_nest':
+        return pickFirst((key, obj) => obj.owner === 'enemy' && this.revealed.has(key))
+      case 'protect_caravan':
+        return pickFirst((_, obj) => obj.owner === 'player' && obj.type === 'scout')
+      case 'iron_frontier':
+        return pickFirst((_, obj) => obj.owner === 'player' && obj.type === 'mine')
+      case 'market_charter':
+        return pickFirst((_, obj) => obj.owner === 'player' && (obj.type === 'market' || obj.type === 'library'))
+      case 'standing_host':
+        return pickFirst((_, obj) => obj.owner === 'player' && (obj.type === 'archer' || obj.type === 'knight'))
+      case 'breadbasket':
+        return pickFirst((_, obj) => obj.owner === 'player' && obj.type === 'farm')
+      default:
+        return CAPITAL_CUBE_KEY
     }
   }
 

@@ -21,6 +21,8 @@ export class Minimap {
       playerUnit: '#4ade80',
       enemyUnit: '#ef4444',
       building: '#60a5fa',
+      raidTelegraph: '#ff8a65',
+      objective: '#7dd3fc',
       grid: 'rgba(255,255,255,0.1)',
     }
   }
@@ -102,6 +104,7 @@ export class Minimap {
     EventBus.on('unitMoved', () => this.render())
     EventBus.on('unitSpawned', () => this.render())
     EventBus.on('unitRemoved', () => this.render())
+    EventBus.on('turnEnd', () => this.render())
     
     this.render()
   }
@@ -227,6 +230,39 @@ export class Minimap {
       ctx.beginPath()
       ctx.arc(px, pz, 4, 0, Math.PI * 2)
       ctx.fill()
+    }
+
+    const raid = game.getUpcomingRaidTelegraph?.(3)
+    if (raid?.spawns?.length) {
+      ctx.save()
+      ctx.strokeStyle = this.colors.raidTelegraph
+      ctx.lineWidth = 1.5
+      ctx.setLineDash([4, 3])
+      for (const spawn of raid.spawns) {
+        const [x, , z] = spawn.key.split(',').map(Number)
+        const point = this.worldToMinimap(x, z, bounds)
+        ctx.beginPath()
+        ctx.moveTo(point.px, point.pz)
+        ctx.lineTo(capital.px, capital.pz)
+        ctx.stroke()
+        ctx.beginPath()
+        ctx.arc(point.px, point.pz, 5, 0, Math.PI * 2)
+        ctx.stroke()
+      }
+      ctx.restore()
+    }
+
+    const objectives = game.getObjectiveMarkerData?.(3) ?? []
+    for (const marker of objectives) {
+      const [x, , z] = marker.key.split(',').map(Number)
+      const point = this.worldToMinimap(x, z, bounds)
+      ctx.fillStyle = this.colors.objective
+      ctx.fillRect(point.px - 3, point.pz - 3, 6, 6)
+      if (marker.urgent) {
+        ctx.strokeStyle = '#f7b267'
+        ctx.lineWidth = 1
+        ctx.strokeRect(point.px - 5, point.pz - 5, 10, 10)
+      }
     }
     
     if (this.app.camera && !this.hovered) {

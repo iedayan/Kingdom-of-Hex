@@ -45,6 +45,10 @@ export class HexMapInteraction {
     /** @type {string | null} */
     this.selectedUnitKey = null
 
+    this.objectiveMarkersGroup = null
+    this.raidTelegraphGroup = null
+    this._strategicSignature = ''
+
     // Move preview (MP) visuals
     this.moveReachGroup = null
     this.moveReachMarkers = []
@@ -241,6 +245,18 @@ export class HexMapInteraction {
     scene.add(group)
   }
 
+  initStrategicMarkers() {
+    this.objectiveMarkersGroup = new Group()
+    this.objectiveMarkersGroup.name = 'ObjectiveMarkers'
+    this.objectiveMarkersGroup.renderOrder = 505
+    this.hexMap.scene.add(this.objectiveMarkersGroup)
+
+    this.raidTelegraphGroup = new Group()
+    this.raidTelegraphGroup.name = 'RaidTelegraphMarkers'
+    this.raidTelegraphGroup.renderOrder = 506
+    this.hexMap.scene.add(this.raidTelegraphGroup)
+  }
+
   tickCapitalMarker(dt) {
     const g = this.capitalMarker
     if (!g?.visible) return
@@ -284,6 +300,67 @@ export class HexMapInteraction {
     const y = level * 0.5 + 1.02
     this.capitalMarker.position.set(xz.x, y, xz.z)
     this.capitalMarker.visible = true
+    this.syncStrategicMarkers()
+  }
+
+  syncStrategicMarkers() {
+    const game = App.instance?.game
+    if (!this.objectiveMarkersGroup || !this.raidTelegraphGroup) return
+    if (!game || this.hexMap.globalCells.size === 0) {
+      this.objectiveMarkersGroup.visible = false
+      this.raidTelegraphGroup.visible = false
+      return
+    }
+
+    const objectives = game.getObjectiveMarkerData?.(3) ?? []
+    const raid = game.getUpcomingRaidTelegraph?.(3)
+    const signature = JSON.stringify({
+      objectives: objectives.map((marker) => `${marker.key}:${marker.label}:${marker.urgent ? 1 : 0}`),
+      raidTurn: raid?.turn ?? 0,
+      raidSpawns: raid?.spawns?.map((spawn) => `${spawn.key}:${spawn.unitType}`) ?? [],
+    })
+    if (signature === this._strategicSignature) {
+      this.objectiveMarkersGroup.visible = objectives.length > 0
+      this.raidTelegraphGroup.visible = Boolean(raid?.spawns?.length)
+      return
+    }
+    this._strategicSignature = signature
+
+    this._clearMarkerGroup(this.objectiveMarkersGroup)
+    this._clearMarkerGroup(this.raidTelegraphGroup)
+
+    for (const marker of objectives) {
+      this.objectiveMarkersGroup.add(
+        this._createStrategicMarker(marker.key, marker.label, marker.urgent ? '#f7b267' : '#7dd3fc', 'objective')
+      )
+    }
+
+    for (const spawn of raid?.spawns || []) {
+      this.raidTelegraphGroup.add(
+        this._createStrategicMarker(spawn.key, `Raid T${raid.turn}`, '#ff8a65', 'raid')
+      )
+      const lane = this._createThreatLane(spawn.key, CAPITAL_CUBE_KEY, '#ff8a65')
+      if (lane) this.raidTelegraphGroup.add(lane)
+    }
+
+    this.objectiveMarkersGroup.visible = objectives.length > 0
+    this.raidTelegraphGroup.visible = Boolean(raid?.spawns?.length)
+  }
+
+  tickStrategicMarkers(dt) {
+    for (const group of [this.objectiveMarkersGroup, this.raidTelegraphGroup]) {
+      if (!group?.visible) continue
+      for (const child of group.children) {
+        if (!child.userData?.pulseSpeed) continue
+        child.userData.phase = (child.userData.phase ?? 0) + dt * child.userData.pulseSpeed
+        const wave = 0.5 + 0.5 * Math.sin(child.userData.phase)
+        if (child.userData.ring) {
+          const scale = 1 + wave * (child.userData.scaleRange ?? 0.08)
+          child.userData.ring.scale.setScalar(scale)
+          child.userData.ring.material.opacity = (child.userData.baseOpacity ?? 0.5) + wave * 0.18
+        }
+      }
+    }
   }
 
   updateHoverHighlight(cq, cr, cs) {
@@ -893,5 +970,82 @@ export class HexMapInteraction {
     const type = String(obj.type || 'object')
     const label = type.charAt(0).toUpperCase() + type.slice(1)
     return `${owner} ${label}`
+  }
+
+  _clearMarkerGroup(group) {
+    if (!group) return
+    while (group.children.length > 0) {
+      const child = group.children[0]
+      if (child.geometry?.dispose) child.geometry.dispose()
+      if (child.material?.dispose) child.material.dispose()
+      if (child.parent) child.parent.remove(child)
+    }
+  }
+
+  _createStrategicMarker(cKey, label, color, kind) {
+    const group = new Group()
+    const cell = this.hexMap.globalCells.get(cKey)
+    if (!cell) return group
+    const worldPos = this._getSurfaceWorldPosition(cKey, (kind === 'raid' ? 1.15 : 1.08))
+    group.position.copy(worldPos)
+
+    const ring = new Mesh(
+      new RingGeometry(kind === 'raid' ? 0.68 : 0.5, kind === 'raid' ? 0.96 : 0.72, 32),
+      new MeshBasicMaterial({
+        color,
+        transparent: true,
+        opacity: kind === 'raid' ? 0.58 : 0.42,
+        depthTest: false,
+        depthWrite: false,
+        side: DoubleSide,
+      })
+    )
+    ring.rotation.x = -Math.PI / 2
+    ring.position.y = 0.02
+    ring.renderOrder = 1002
+    group.add(ring)
+
+    const div = document.createElement('div')
+    div.className = kind === 'raid' ? 'hx-raid-tag' : 'hx-objective-tag'
+    div.textContent = label
+    const cssLabel = new CSS2DObject(div)
+    cssLabel.position.set(0, kind === 'raid' ? 1.5 : 1.25, 0)
+    group.add(cssLabel)
+
+    group.userData.ring = ring
+    group.userData.pulseSpeed = kind === 'raid' ? 3.2 : 2.1
+    group.userData.scaleRange = kind === 'raid' ? 0.14 : 0.08
+    group.userData.baseOpacity = kind === 'raid' ? 0.4 : 0.32
+    return group
+  }
+
+  _createThreatLane(fromKey, toKey, color) {
+    const from = this._getSurfaceWorldPosition(fromKey, 1.12)
+    const to = this._getSurfaceWorldPosition(toKey, 1.12)
+    if (!from || !to) return null
+    const positions = new Float32Array([
+      from.x, from.y, from.z,
+      to.x, to.y, to.z,
+    ])
+    const geometry = new BufferGeometry()
+    geometry.setAttribute('position', new Float32BufferAttribute(positions, 3))
+    const material = new LineBasicNodeMaterial({ color })
+    material.depthTest = false
+    material.depthWrite = false
+    material.transparent = true
+    material.opacity = 0.45
+    const line = new LineSegments(geometry, material)
+    line.renderOrder = 1001
+    return line
+  }
+
+  _getSurfaceWorldPosition(cKey, yOffset = 1.05) {
+    const cell = this.hexMap.globalCells.get(cKey)
+    if (!cell) return null
+    const { q, r, s } = HexUtils.parse(cKey)
+    const world = App.instance?.unitManager?.getWorldPosition?.(q, r, s, cell.level || 0)
+    if (world) return new Vector3(world.x, (cell.level || 0) * 0.5 + yOffset, world.z)
+    const center = this._cubeCenterXZ(q, r, s)
+    return new Vector3(center.x, (cell.level || 0) * 0.5 + yOffset, center.z)
   }
 }

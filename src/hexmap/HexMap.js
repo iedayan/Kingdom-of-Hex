@@ -149,6 +149,7 @@ export class HexMap {
     // Hover highlight for click-to-solve region
     this.interaction.initHoverHighlight()
     this.interaction.initCapitalMarker()
+    this.interaction.initStrategicMarkers()
 
     // Create only the center placeholder — others created dynamically on demand
     await this.createGrid(0, 0)
@@ -1688,7 +1689,9 @@ export class HexMap {
   }
 
   update(dt) {
+    this.interaction?.syncStrategicMarkers?.()
     this.interaction?.tickCapitalMarker?.(dt)
+    this.interaction?.tickStrategicMarkers?.(dt)
   }
 
   // === Water uniform proxies (GUI accesses via app.city._waterSpeed etc.) ===

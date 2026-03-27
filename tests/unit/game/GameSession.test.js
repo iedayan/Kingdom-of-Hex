@@ -363,6 +363,38 @@ describe('GameSession', () => {
     })
   })
 
+  describe('strategic telegraphs', () => {
+    it('builds deterministic upcoming raid telegraphs from map state', () => {
+      app.city.grids.set('0,0', {
+        gridRadius: 1,
+        globalCenterCube: { q: 0, r: 0 },
+        hexTiles: [
+          { type: 0, gridX: 0, gridZ: 0 },
+          { type: 0, gridX: 1, gridZ: 0 },
+          { type: 0, gridX: 2, gridZ: 0 },
+        ],
+      })
+
+      const first = session.getUpcomingRaidTelegraph(3)
+      const second = session.getUpcomingRaidTelegraph(3)
+      expect(second).toEqual(first)
+      expect(first.turn).toBeGreaterThanOrEqual(8)
+      expect(first.spawns.length).toBeGreaterThan(0)
+    })
+
+    it('anchors objective markers to relevant board pieces', () => {
+      session.turn = 13
+      session.addObject('1,0,-1', { type: 'farm', owner: 'player', hp: 10 })
+      session.spawnUnit('2,0,-2', 'scout', 'player')
+
+      const markers = session.getObjectiveMarkerData(10)
+      const labels = markers.map((marker) => marker.label)
+
+      expect(markers.some((marker) => marker.key === '1,0,-1')).toBe(true)
+      expect(labels.some((label) => label.includes('Breadbasket'))).toBe(true)
+    })
+  })
+
   describe('tech tree', () => {
     it('has all required technologies', () => {
       expect(session.techTree.archery).toBeDefined()
