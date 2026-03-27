@@ -36,18 +36,7 @@ export class UnitManager {
 
     if (!this.previewMesh || this.previewMesh.userData.type !== type) {
       if (this.previewMesh) this.scene.remove(this.previewMesh)
-      
-      let meshName = 'building_tower_A_yellow'
-      if (type.startsWith('goblin')) meshName = 'fort'
-      if (type === 'scout') meshName = 'building_well_yellow'
-      if (type === 'archer') meshName = 'building_church_yellow'
-      if (type === 'knight') meshName = 'building_tower_A_yellow'
-      if (type === 'lumberjack') meshName = 'building_home_B_yellow'
-      if (type === 'farm') meshName = 'building_windmill_yellow'
-      if (type === 'mine') meshName = 'mine'
-      if (type === 'market') meshName = 'building_market_yellow'
-      if (type === 'tower') meshName = 'building_tower_A_yellow'
-      if (type === 'library') meshName = 'building_church_yellow'
+      const meshName = this._getMeshName(type)
 
       const geom = Decorations.cachedGeoms.get(meshName)
       if (geom) {
@@ -79,11 +68,7 @@ export class UnitManager {
     group.position.copy(worldPos)
     this.scene.add(group)
 
-    let meshName = 'building_tower_A_yellow'
-    if (type.startsWith('goblin')) meshName = 'fort'
-    if (type === 'scout') meshName = 'building_well_yellow'
-    if (type === 'archer') meshName = 'building_church_yellow'
-    if (type === 'knight') meshName = 'building_tower_A_yellow'
+    const meshName = this._getMeshName(type)
     
     const geom = Decorations.cachedGeoms.get(meshName)
     if (geom) {
@@ -121,6 +106,18 @@ export class UnitManager {
     this.units.set(cKey, unitEntry)
     this.updateVisibility()
     return unitEntry
+  }
+
+  _getMeshName(type) {
+    if (type?.startsWith('goblin')) return 'fort'
+    if (type === 'scout' || type === 'outrider') return 'building_well_yellow'
+    if (type === 'archer' || type === 'sageguard' || type === 'library') return 'building_church_yellow'
+    if (type === 'knight' || type === 'sentinel' || type === 'tower') return 'building_tower_A_yellow'
+    if (type === 'lumberjack') return 'building_home_B_yellow'
+    if (type === 'farm') return 'building_windmill_yellow'
+    if (type === 'mine') return 'mine'
+    if (type === 'market') return 'building_market_yellow'
+    return 'building_tower_A_yellow'
   }
 
   updateVisibility() {

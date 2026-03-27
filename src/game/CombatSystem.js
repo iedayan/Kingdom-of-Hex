@@ -3,7 +3,7 @@ import { getAttackDamage, getDefenseReduction } from '../gameplay/map-rules/biom
 import { Sounds } from '../core/audio/Sounds.js'
 import { log } from '../core/logging/gameConsole.js'
 import { EventBus } from '../core/events/EventBus.js'
-import { COMBAT } from './constants.js'
+import { COMBAT, PLAYER_RANGED_UNIT_TYPES, PLAYER_UNIT_TYPES } from './constants.js'
 
 export class CombatSystem {
   constructor(session, app) {
@@ -119,7 +119,10 @@ export class CombatSystem {
 
   async _fireProjectile(attackerKey, targetKey, attacker) {
     if (!this.app.unitManager) return
-    const isRanged = attacker.type === 'archer' || attacker.type === 'tower' || attacker.type === 'goblin_slinger'
+    const isRanged =
+      PLAYER_RANGED_UNIT_TYPES.includes(attacker.type) ||
+      attacker.type === 'tower' ||
+      attacker.type === 'goblin_slinger'
     if (!isRanged) return
     const projType = attacker.type === 'tower' ? 'bolt' : 'arrow'
     await this.app.unitManager.fireProjectile(attackerKey, targetKey, projType)
@@ -165,7 +168,7 @@ export class CombatSystem {
       this._showBountyEffect(targetKey, bounty)
       EventBus.emit('combatBounty', { amount: bounty })
     } else {
-      if (['scout', 'archer', 'knight'].includes(target.type)) {
+      if (PLAYER_UNIT_TYPES.includes(target.type)) {
         this.session.removeUnit(targetKey)
       } else {
         this.session.removeObject(targetKey)

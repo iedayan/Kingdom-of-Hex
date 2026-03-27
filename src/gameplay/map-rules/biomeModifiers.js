@@ -1,5 +1,5 @@
 import { getBiomeForCube } from './gridAccess.js'
-import { COMBAT } from '../../game/constants.js'
+import { COMBAT, PLAYER_UNIT_TYPES } from '../../game/constants.js'
 
 /** Per-bioma yield multipliers for economic buildings (grid-level climate). */
 const YIELD = {
@@ -30,7 +30,7 @@ function getMatchupBonus(attackerType, targetType) {
 }
 
 function isPlayerUnit(target) {
-  return ['scout', 'archer', 'knight'].includes(target?.type)
+  return PLAYER_UNIT_TYPES.includes(target?.type)
 }
 
 export function getDefenseReduction(session, app, targetKey, target) {

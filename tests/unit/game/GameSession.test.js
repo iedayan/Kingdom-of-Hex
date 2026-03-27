@@ -449,6 +449,11 @@ describe('GameSession', () => {
   })
 
   describe('run branches', () => {
+    it('returns a faction-specific recruit roster after applying a run modifier', () => {
+      session.applyRunModifier('frontier_march')
+      expect(session.getRecruitableUnitTypes()).toEqual(['scout', 'archer', 'knight', 'sentinel'])
+    })
+
     it('offers decree turns at 12 and 24', () => {
       app.showEventModal = vi.fn()
       session.turn = 12

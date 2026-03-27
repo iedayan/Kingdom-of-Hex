@@ -1,3 +1,5 @@
+import { PLAYER_RANGED_UNIT_TYPES, PLAYER_UNIT_TYPES } from '../game/constants.js'
+
 export function initPauseAndTutorialUI(app, deps) {
   const { Sounds } = deps
   const seedStr = () => String(app.seed ?? app.game?.seed ?? '')
@@ -138,15 +140,16 @@ export function updateHowToPlayOverlay(app) {
   }
 
   const playerObjs = Array.from(game.objects.values()).filter((o) => o?.owner === 'player')
+  const recruitableUnits = game.getRecruitableUnitTypes?.() || ['scout', 'archer', 'knight']
   const buildingTypes = new Set(['lumberjack', 'farm', 'mine', 'market', 'tower', 'library'])
-  const unitTypes = new Set(['scout', 'archer', 'knight'])
+  const unitTypes = new Set(PLAYER_UNIT_TYPES)
   const hasBuilding = playerObjs.some((o) => buildingTypes.has(o.type))
   const hasFarm = playerObjs.some((o) => o.type === 'farm')
   const hasEconomy = playerObjs.some((o) => o.type === 'lumberjack' || o.type === 'farm' || o.type === 'mine')
   const hasUnit = playerObjs.some((o) => unitTypes.has(o.type))
   const hasTower = playerObjs.some((o) => o.type === 'tower')
-  const hasArcher = playerObjs.some((o) => o.type === 'archer')
-  const hasKnight = playerObjs.some((o) => o.type === 'knight')
+  const hasRanged = playerObjs.some((o) => PLAYER_RANGED_UNIT_TYPES.includes(o.type))
+  const hasFrontline = playerObjs.some((o) => ['knight', 'sentinel'].includes(o.type))
   const hasMoved = playerObjs.some((o) => o.movedThisTurn === true)
   const revealedCount = game?.revealed?.size ?? 0
   const hasResearch = Boolean(game.currentResearch)
@@ -160,8 +163,12 @@ export function updateHowToPlayOverlay(app) {
   else if (!hasUnit) stage = 'deploy'
   else if (!hasMoved) stage = 'move'
   else if (!hasResearch) stage = 'research'
-  else if (typeof turnsToWave === 'number' && turnsToWave <= 2 && !hasTower && !hasArcher && !hasKnight) stage = 'defend'
+  else if (typeof turnsToWave === 'number' && turnsToWave <= 2 && !hasTower && !hasRanged && !hasFrontline) stage = 'defend'
   else stage = 'endturn'
+
+  const scoutLike = recruitableUnits.includes('outrider') ? 'Outrider' : 'Scout'
+  const rangedLike = recruitableUnits.includes('sageguard') ? 'Sageguard' : 'Archer'
+  const frontlineLike = recruitableUnits.includes('sentinel') ? 'Sentinel' : 'Knight'
 
   if (app._howToPlayStage !== stage) {
     app._howToPlayStage = stage
@@ -191,12 +198,12 @@ export function updateHowToPlayOverlay(app) {
   } else if (stage === 'deploy') {
     html = `
       <b>Step 2:</b> Deploy a unit.<br/>
-      Open with a <b>Scout</b> for map control, or rush research if you want archers/towers first.
+      Open with a <b>${scoutLike}</b> for map control, or rush research if you want <b>${rangedLike}</b>s and towers first.
     `
   } else if (stage === 'move' && !exploredAfterBaseline && !hasMoved) {
     html = `
       <b>Step 2:</b> Move a unit.<br/>
-      Click your unit, then click a <b>reachable</b> tile (cyan rings) to move. Scouts should push outward; fighters should screen likely raid lanes.
+      Click your unit, then click a <b>reachable</b> tile (cyan rings) to move. ${scoutLike}s should push outward; fighters should screen likely raid lanes.
     `
   } else if (stage === 'research') {
     html = `
@@ -206,7 +213,7 @@ export function updateHowToPlayOverlay(app) {
   } else if (stage === 'defend') {
     html = `
       <b>The first raid is close.</b><br/>
-      Prepare a response now: build a <b>Tower</b>, field an <b>Archer</b>, or station a <b>Knight</b> where raiders will connect.
+      Prepare a response now: build a <b>Tower</b>, field a <b>${rangedLike}</b>, or station a <b>${frontlineLike}</b> where raiders will connect.
     `
   } else {
     html = `

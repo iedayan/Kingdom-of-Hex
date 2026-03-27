@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { buildDecreeEvent, buildEnemyWavePlan, defineOptionalObjectives, describeEnemyWavePlan, pickDecreeChoices } from '../../../src/game/runContent.js'
+import { buildDecreeEvent, buildEnemyWavePlan, defineOptionalObjectives, describeEnemyWavePlan, getRosterForIdentity, pickDecreeChoices, pickEnemyFaction } from '../../../src/game/runContent.js'
 
 describe('runContent wave planning', () => {
   it('builds deterministic wave plans from the same seed and turn', () => {
@@ -44,6 +44,21 @@ describe('runContent wave planning', () => {
     expect(turn40.id).toBe('crownbreaker-siege')
   })
 
+  it('returns faction-specific recruit rosters', () => {
+    expect(getRosterForIdentity('guild_compact')).toContain('outrider')
+    expect(getRosterForIdentity('frontier_march')).toContain('sentinel')
+    expect(getRosterForIdentity('scholar_court')).toContain('sageguard')
+  })
+
+  it('picks deterministic enemy factions and exposes them in wave plans', () => {
+    const first = pickEnemyFaction(18, { seed: 12345, identityId: 'guild_compact' })
+    const second = pickEnemyFaction(18, { seed: 12345, identityId: 'guild_compact' })
+    const plan = buildEnemyWavePlan(18, { seed: 12345, harsherRaids: false, identityId: 'guild_compact' })
+    expect(second.id).toBe(first.id)
+    expect(plan.enemyFactionId).toBeTruthy()
+    expect(plan.enemyFactionName).toBeTruthy()
+  })
+
   it('offers a broader midgame objective set', () => {
     const objectives = defineOptionalObjectives()
     const ids = objectives.map((objective) => objective.id)
@@ -64,6 +79,17 @@ describe('runContent wave planning', () => {
     }
     expect(protectCaravan.check(earlySession)).toBe(false)
     expect(protectCaravan.check(midSession)).toBe(true)
+  })
+
+  it('lets standing host complete with faction frontline and ranged units', () => {
+    const standingHost = defineOptionalObjectives().find((objective) => objective.id === 'standing_host')
+    const session = {
+      objects: new Map([
+        ['0,0,0', { owner: 'player', type: 'sentinel' }],
+        ['1,0,-1', { owner: 'player', type: 'sageguard' }],
+      ]),
+    }
+    expect(standingHost.check(session)).toBe(true)
   })
 
   it('builds deterministic decree choices', () => {

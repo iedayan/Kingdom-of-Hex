@@ -47,6 +47,33 @@ export const UNITS = {
     cost: 100,
     sight: 1,
   },
+  outrider: {
+    hp: 12,
+    maxHp: 12,
+    atk: 3,
+    range: 1,
+    mp: 4,
+    cost: 75,
+    sight: 3,
+  },
+  sentinel: {
+    hp: 24,
+    maxHp: 24,
+    atk: 5,
+    range: 1,
+    mp: 1,
+    cost: 90,
+    sight: 1,
+  },
+  sageguard: {
+    hp: 9,
+    maxHp: 9,
+    atk: 3,
+    range: 2,
+    mp: 2,
+    cost: 70,
+    sight: 2,
+  },
   goblin: {
     hp: 6,
     maxHp: 6,
@@ -94,6 +121,10 @@ export const UNITS = {
   },
 }
 
+export const PLAYER_UNIT_TYPES = ['scout', 'archer', 'knight', 'outrider', 'sentinel', 'sageguard']
+export const PLAYER_RANGED_UNIT_TYPES = ['archer', 'sageguard']
+export const ENEMY_UNIT_TYPES = ['goblin', 'goblin_raider', 'goblin_brute', 'goblin_slinger', 'goblin_warlord']
+
 export const COMBAT = {
   DAMAGE_VARIANCE: 0.2,
   XP_ON_ATTACK: 2,
@@ -128,6 +159,25 @@ export const COMBAT = {
       goblin_raider: 2,
       goblin_slinger: 2,
       goblin_warlord: 2,
+      tower: -1,
+    },
+    outrider: {
+      goblin: 1,
+      goblin_raider: 2,
+      goblin_slinger: 1,
+      goblin_warlord: 1,
+      tower: -1,
+    },
+    sentinel: {
+      goblin_brute: 2,
+      goblin_warlord: 2,
+      goblin_raider: 1,
+      tower: -1,
+    },
+    sageguard: {
+      goblin_slinger: 2,
+      goblin_warlord: 1,
+      goblin_brute: -1,
       tower: -1,
     },
     tower: {
@@ -172,6 +222,9 @@ export const COMBAT = {
     tower: 6,
     archer: 5,
     knight: 4,
+    sageguard: 5,
+    sentinel: 4,
+    outrider: 4,
     scout: 3,
     market: 3,
     library: 3,
@@ -231,6 +284,9 @@ export default {
   GAME,
   VICTORY,
   UNITS,
+  PLAYER_UNIT_TYPES,
+  PLAYER_RANGED_UNIT_TYPES,
+  ENEMY_UNIT_TYPES,
   COMBAT,
   ECONOMY,
   BIOME,

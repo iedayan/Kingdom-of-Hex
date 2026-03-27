@@ -1,3 +1,5 @@
+import { PLAYER_UNIT_TYPES } from '../game/constants.js'
+
 export function initLaunchFeatures(app, deps) {
   const { fpsMonitor, KeyboardController } = deps
   const urlParams = new URLSearchParams(window.location.search)
@@ -96,7 +98,7 @@ export function setupAnalytics(app, deps) {
   Analytics.trackGameStart(app.seed)
 
   EventBus.on('unitSpawned', (data) => {
-    if (data.unit.owner === 'player' && ['scout', 'archer', 'knight'].includes(data.unit.type)) {
+    if (data.unit.owner === 'player' && PLAYER_UNIT_TYPES.includes(data.unit.type)) {
       Analytics.trackUnitTrained(data.unit.type, {})
     }
   })

@@ -24,6 +24,7 @@ import { createPlayerBuilding } from '../game/buildingStats.js'
 import { Sounds } from '../core/audio/Sounds.js'
 import { HexUtils } from '../game/HexUtils.js'
 import { BUILDINGS, UNITS } from '../game/GameData.js'
+import { PLAYER_UNIT_TYPES } from '../game/constants.js'
 import { assessPlacement } from '../gameplay/map-rules/placementRules.js'
 
 /**
@@ -512,7 +513,7 @@ export class HexMapInteraction {
     costSoFar.set(this.selectedUnitKey, 0)
     const frontier = [{ key: this.selectedUnitKey, cost: 0 }]
 
-    const passableUnitTypes = new Set(['scout', 'archer', 'knight'])
+    const passableUnitTypes = new Set(PLAYER_UNIT_TYPES)
 
     while (frontier.length > 0) {
       frontier.sort((a, b) => a.cost - b.cost)

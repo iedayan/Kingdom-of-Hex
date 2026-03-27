@@ -15,13 +15,15 @@ import { ResearchSystem } from './ResearchSystem.js'
 import {
   GAME,
   UNITS,
+  PLAYER_UNIT_TYPES,
+  PLAYER_RANGED_UNIT_TYPES,
   COMBAT,
   ECONOMY,
   ENEMY,
   META,
   VISION,
 } from './constants.js'
-import { RUN_MODIFIERS, defineOptionalObjectives, buildEnemyWavePlan, describeEnemyWavePlan, buildDecreeEvent } from './runContent.js'
+import { RUN_MODIFIERS, defineOptionalObjectives, buildEnemyWavePlan, describeEnemyWavePlan, buildDecreeEvent, getRosterForIdentity } from './runContent.js'
 
 export class GameSession {
   constructor({ seed, app }) {
@@ -131,7 +133,7 @@ export class GameSession {
     report.gross.science = incomes.science
     report.notes.push(`Base science +${incomes.science}`)
     for (const [cKey, obj] of this.objects.entries()) {
-      if (obj.owner === 'player' && ['scout', 'archer', 'knight'].includes(obj.type)) {
+      if (obj.owner === 'player' && PLAYER_UNIT_TYPES.includes(obj.type)) {
         foodUpkeep += GAME.UNIT_FOOD_UPKEEP
       }
     }
@@ -174,7 +176,7 @@ export class GameSession {
       if (obj.type === 'market') {
         const adjBuildings = neighbors.filter(n => {
           const adj = this.objects.get(n)
-          return adj && adj.owner === 'player' && !['scout', 'archer', 'knight'].includes(adj.type)
+          return adj && adj.owner === 'player' && !PLAYER_UNIT_TYPES.includes(adj.type)
         }).length
         const marketGold = scaleYield(ECONOMY.MARKET_GOLD_BASE + adjBuildings * ECONOMY.MARKET_GOLD_PER_ADJACENT + (this.runRules.marketGoldBonus || 0), mult)
 
@@ -212,7 +214,7 @@ export class GameSession {
         report.starvation = true
         EventBus.emit('floatingText', { text: `STARVATION!`, position: 'capital', color: '#ff4444' })
         for (const [cKey, obj] of this.objects.entries()) {
-          if (obj.owner === 'player' && ['scout', 'archer', 'knight'].includes(obj.type)) {
+          if (obj.owner === 'player' && PLAYER_UNIT_TYPES.includes(obj.type)) {
             obj.hp -= 2
             report.starvationHits += 1
             EventBus.emit('floatingText', { text: '-2 HP 🍖', position: cKey, color: '#ff4444' })
@@ -301,7 +303,7 @@ export class GameSession {
 
       for (const target of playerTargets) {
         const distance = HexUtils.distance(tile.key, target.key)
-        if (['scout', 'archer', 'knight'].includes(target.obj.type)) {
+        if (PLAYER_UNIT_TYPES.includes(target.obj.type)) {
           nearestUnit = Math.min(nearestUnit, distance)
         } else {
           nearestStructure = Math.min(nearestStructure, distance)
@@ -356,6 +358,7 @@ export class GameSession {
     const plan = buildEnemyWavePlan(nextTurn, {
       harsherRaids: this.runRules.harsherRaids,
       seed: this.seed,
+      identityId: this.runModifier,
     })
     return {
       turn: nextTurn,
@@ -427,9 +430,9 @@ export class GameSession {
   }
 
   getActionablePlayerUnits() {
-    const rolePriority = { knight: 0, archer: 1, scout: 2 }
+    const rolePriority = { sentinel: 0, knight: 1, sageguard: 2, archer: 3, outrider: 4, scout: 5 }
     return Array.from(this.objects.entries())
-      .filter(([_, obj]) => obj.owner === 'player' && ['scout', 'archer', 'knight'].includes(obj.type))
+      .filter(([_, obj]) => obj.owner === 'player' && PLAYER_UNIT_TYPES.includes(obj.type))
       .map(([key, obj]) => {
         const mpRemaining = typeof obj.mpRemaining === 'number' ? obj.mpRemaining : (typeof obj.mp === 'number' ? obj.mp : 0)
         const ready = mpRemaining > 0 && obj.movedThisTurn === false && typeof obj.turnCreated === 'number' && obj.turnCreated < this.turn
@@ -482,7 +485,7 @@ export class GameSession {
     let marketFoodSpent = 0
 
     for (const obj of this.objects.values()) {
-      if (obj.owner === 'player' && ['scout', 'archer', 'knight'].includes(obj.type)) {
+      if (obj.owner === 'player' && PLAYER_UNIT_TYPES.includes(obj.type)) {
         foodUpkeep += GAME.UNIT_FOOD_UPKEEP
       }
     }
@@ -502,7 +505,7 @@ export class GameSession {
       if (obj.type === 'market') {
         const adjBuildings = neighbors.filter((n) => {
           const adj = this.objects.get(n)
-          return adj && adj.owner === 'player' && !['scout', 'archer', 'knight'].includes(adj.type)
+          return adj && adj.owner === 'player' && !PLAYER_UNIT_TYPES.includes(adj.type)
         }).length
         const marketGold = scaleYield(ECONOMY.MARKET_GOLD_BASE + adjBuildings * ECONOMY.MARKET_GOLD_PER_ADJACENT + (this.runRules.marketGoldBonus || 0), mult)
         if (this.resources.food + foodIncome - foodUpkeep - marketFoodSpent >= ECONOMY.MARKET_FOOD_THRESHOLD) {
@@ -541,13 +544,17 @@ export class GameSession {
     const turnsToWave = nextWave ? nextWave.turn - this.turn : null
     if (typeof turnsToWave === 'number' && turnsToWave <= 1) {
       const defenses = Array.from(this.objects.values()).filter((obj) =>
-        obj.owner === 'player' && ['tower', 'archer', 'knight'].includes(obj.type)
+        obj.owner === 'player' && (obj.type === 'tower' || PLAYER_RANGED_UNIT_TYPES.includes(obj.type) || ['knight', 'sentinel'].includes(obj.type))
       ).length
       if (defenses === 0) warnings.push('Raid imminent and no frontline defense is ready')
       else warnings.push(`Raid on turn ${nextWave.turn}`)
     }
 
     return warnings
+  }
+
+  getRecruitableUnitTypes() {
+    return getRosterForIdentity(this.runModifier)
   }
 
   getBiome(gridKey) {
@@ -779,6 +786,7 @@ export class GameSession {
     this.runModifier = mod.id
     mod.apply(this)
     this.refreshPlayerCombatBonuses()
+    if (this.onUpdateUI) this.onUpdateUI()
     EventBus.emit('notification', { text: `Run Modifier: ${mod.name}`, duration: 2200 })
   }
 
@@ -1005,6 +1013,7 @@ export class GameSession {
     const plan = buildEnemyWavePlan(turn, {
       harsherRaids: this.runRules.harsherRaids,
       seed: this.seed,
+      identityId: this.runModifier,
     })
     const rng = createRng(hashSeed(this.seed, 'wave-spawn', turn))
     const available = [...candidates]
@@ -1028,13 +1037,13 @@ export class GameSession {
       case 'clear_nest':
         return pickFirst((key, obj) => obj.owner === 'enemy' && this.revealed.has(key))
       case 'protect_caravan':
-        return pickFirst((_, obj) => obj.owner === 'player' && obj.type === 'scout')
+        return pickFirst((_, obj) => obj.owner === 'player' && ['scout', 'outrider'].includes(obj.type))
       case 'iron_frontier':
         return pickFirst((_, obj) => obj.owner === 'player' && obj.type === 'mine')
       case 'market_charter':
         return pickFirst((_, obj) => obj.owner === 'player' && (obj.type === 'market' || obj.type === 'library'))
       case 'standing_host':
-        return pickFirst((_, obj) => obj.owner === 'player' && (obj.type === 'archer' || obj.type === 'knight'))
+        return pickFirst((_, obj) => obj.owner === 'player' && ['archer', 'knight', 'sentinel', 'sageguard'].includes(obj.type))
       case 'breadbasket':
         return pickFirst((_, obj) => obj.owner === 'player' && obj.type === 'farm')
       default:

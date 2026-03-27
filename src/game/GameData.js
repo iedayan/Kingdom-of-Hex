@@ -16,6 +16,9 @@ export const UNITS = {
   scout: { id: 'scout', name: 'Scout', icon: 'compass', cost: { gold: 40 }, hp: 10, maxHp: 10, atk: 2, range: 1, mp: 3, sight: 2, desc: 'Fast exploration. Upkeep: -2 Food/turn.' },
   archer: { id: 'archer', name: 'Archer', icon: 'target', cost: { gold: 60 }, tech: 'archery', hp: 8, maxHp: 8, atk: 4, range: 2, mp: 2, sight: 1, desc: 'Ranged attack. Upkeep: -2 Food/turn.' },
   knight: { id: 'knight', name: 'Knight', icon: 'shield', cost: { gold: 100 }, tech: 'steel_working', hp: 20, maxHp: 20, atk: 6, range: 1, mp: 2, sight: 1, desc: 'Heavy frontline. Upkeep: -2 Food/turn.' },
+  outrider: { id: 'outrider', name: 'Outrider', icon: 'flag', cost: { gold: 75 }, tech: 'currency', hp: 12, maxHp: 12, atk: 3, range: 1, mp: 4, sight: 3, desc: 'Guild cavalry. Huge mobility and scouting reach.' },
+  sentinel: { id: 'sentinel', name: 'Sentinel', icon: 'shield-half', cost: { gold: 90 }, tech: 'steel_working', hp: 24, maxHp: 24, atk: 5, range: 1, mp: 1, sight: 1, desc: 'Fortress infantry. Slow, durable, built to anchor the line.' },
+  sageguard: { id: 'sageguard', name: 'Sageguard', icon: 'sparkles', cost: { gold: 70 }, tech: 'scholarship', hp: 9, maxHp: 9, atk: 3, range: 2, mp: 2, sight: 2, desc: 'Scholar-court battlemage. Flexible ranged support.' },
   goblin: { id: 'goblin', name: 'Goblin', icon: 'skull', cost: {}, hp: 6, maxHp: 6, atk: 3, range: 1, mp: 2, sight: 1, desc: 'Enemy raider.' }
 }
 

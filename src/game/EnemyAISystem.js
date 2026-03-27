@@ -2,7 +2,7 @@ import { HexUtils } from './HexUtils.js'
 import { CAPITAL_CUBE_KEY } from './goals.js'
 import { log } from '../core/logging/gameConsole.js'
 import { getAttackDamage } from '../gameplay/map-rules/biomeModifiers.js'
-import { COMBAT } from './constants.js'
+import { COMBAT, PLAYER_UNIT_TYPES } from './constants.js'
 import { EventBus } from '../core/events/EventBus.js'
 
 export class EnemyAISystem {
@@ -163,7 +163,7 @@ export class EnemyAISystem {
   _countAdjacentPlayerStructures(cKey) {
     return this.session.getNeighbors(cKey).reduce((acc, nb) => {
       const t = this.session.objects.get(nb)
-      const isStructure = t && t.owner === 'player' && !['scout', 'archer', 'knight'].includes(t.type)
+      const isStructure = t && t.owner === 'player' && !PLAYER_UNIT_TYPES.includes(t.type)
       return acc + (isStructure ? 1 : 0)
     }, 0)
   }

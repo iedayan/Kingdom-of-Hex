@@ -3,6 +3,7 @@ import { Sounds } from '../../core/audio/Sounds.js'
 import { refreshLucideIcons } from '../../core/ui/icons.js'
 import { MAX_TURNS, capitalMissionLines, CAPITAL_SEAT_NAME } from '../../game/goals.js'
 import { BUILDINGS, UNITS, formatCost } from '../../game/GameData.js'
+import { PLAYER_UNIT_TYPES } from '../../game/constants.js'
 import { RUN_MODIFIERS } from '../../game/runContent.js'
 import gsap from 'gsap'
 
@@ -16,6 +17,7 @@ export class GameHud {
     this.selectedBuilding = null
     this.selectedUnitType = null
     this._endTurnConfirmUntil = 0
+    this._unitRosterSignature = ''
   }
 
   shakeButton(btn) {
@@ -61,6 +63,42 @@ export class GameHud {
     } catch {
       return false
     }
+  }
+
+  _createUnitButton(unit) {
+    const btn = document.createElement('button')
+    btn.className = 'hx-btn'
+    btn.dataset.unitId = unit.id
+    btn.title = unit.desc
+    btn.innerHTML = `<i data-lucide="${unit.icon}" style="width:16px;height:16px;margin-bottom:4px"></i><br><b>${unit.name}</b><br><span style="font-size:9px;opacity:0.6">${formatCost(unit.cost)}</span>`
+    btn.onclick = () => this.selectAction('unit', unit.id)
+    return btn
+  }
+
+  syncUnitRoster() {
+    const app = this.app
+    const roster = app.game?.getRecruitableUnitTypes?.() || ['scout', 'archer', 'knight']
+    const rosterSignature = roster.join(',')
+    app.unitsList = roster.map((unitId) => UNITS[unitId]).filter(Boolean)
+    if (!app.unitGroup) return
+    if (this._unitRosterSignature === rosterSignature && Object.keys(app.unitButtons || {}).length === app.unitsList.length) return
+
+    app.unitGroup.querySelectorAll('[data-unit-id]').forEach((btn) => btn.remove())
+    app.unitButtons = {}
+    for (const unit of app.unitsList) {
+      const btn = this._createUnitButton(unit)
+      btn.style.background = unit.id === this.selectedUnitType ? 'var(--hx-bg-active)' : 'transparent'
+      app.unitButtons[unit.id] = btn
+      app.unitGroup.appendChild(btn)
+    }
+
+    if (this.selectedUnitType && !roster.includes(this.selectedUnitType)) {
+      this.selectedUnitType = null
+      app.selectedUnitType = null
+    }
+
+    this._unitRosterSignature = rosterSignature
+    refreshLucideIcons()
   }
 
   mount() {
@@ -216,9 +254,10 @@ export class GameHud {
 
     const ecoGroup = createGroup('ECONOMY', 'var(--hx-accent-gold)')
     const milGroup = createGroup('MILITARY', 'var(--hx-danger)')
+    app.unitGroup = milGroup
 
     app.buildingsList = Object.values(BUILDINGS)
-    app.unitsList = Object.values(UNITS).filter(u => u.id !== 'goblin')
+    app.unitsList = []
 
     app.buildButtons = {}; app.unitButtons = {};
     app.buildingsList.forEach(b => {
@@ -226,11 +265,7 @@ export class GameHud {
       btn.innerHTML = `<i data-lucide="${b.icon}" style="width:16px;height:16px;margin-bottom:4px"></i><br><b>${b.name}</b><br><span style="font-size:9px;opacity:0.6">${formatCost(b.cost)}</span>`;
       btn.onclick = () => this.selectAction('building', b.id); app.buildButtons[b.id] = btn; ecoGroup.appendChild(btn);
     })
-    app.unitsList.forEach(u => {
-      const btn = document.createElement('button'); btn.className = 'hx-btn'; btn.title = u.desc;
-      btn.innerHTML = `<i data-lucide="${u.icon}" style="width:16px;height:16px;margin-bottom:4px"></i><br><b>${u.name}</b><br><span style="font-size:9px;opacity:0.6">${formatCost(u.cost)}</span>`;
-      btn.onclick = () => this.selectAction('unit', u.id); app.unitButtons[u.id] = btn; milGroup.appendChild(btn);
-    })
+    this.syncUnitRoster()
 
     const techBtn = document.createElement('button'); techBtn.className = 'hx-btn'; techBtn.innerHTML = '<i data-lucide="flask-conical" style="width:16px;height:16px;margin-bottom:4px;color:#00ffff"></i><br><b>TECH</b><br><span style="font-size:9px;opacity:0.6" aria-hidden="true">&nbsp;</span>'; techBtn.onclick = () => app.toggleResearchModal();
     app.nextTurnBtn = document.createElement('button'); app.nextTurnBtn.className = 'hx-btn hx-btn--primary'; app.nextTurnBtn.innerHTML = 'END TURN ➔'; app.nextTurnBtn.onclick = () => this.handleEndTurnClick();
@@ -387,6 +422,7 @@ export class GameHud {
   updateGameUI() {
     const app = this.app
     if (!app.game || !app.buildingsList || !app.unitsList) return
+    this.syncUnitRoster()
     const r = app.game.resources
     app.resGold.val.textContent = r.gold; app.resWood.val.textContent = r.wood; app.resFood.val.textContent = r.food; app.resStone.val.textContent = r.stone; app.resScience.val.textContent = r.science;
     app.turnCounter.textContent = `TURN ${app.game.turn} / ${MAX_TURNS}`
@@ -396,7 +432,9 @@ export class GameHud {
     }
     if (app.waveCaption && app.game.getUpcomingWavePreview) {
       const nextWave = app.game.getUpcomingWavePreview()
-      app.waveCaption.textContent = nextWave ? `${nextWave.plan.encounter === 'boss' ? 'Boss' : 'Next'} Raid T${nextWave.turn}: ${nextWave.plan.name}` : ''
+      app.waveCaption.textContent = nextWave
+        ? `${nextWave.plan.encounter === 'boss' ? 'Boss' : 'Next'} Raid T${nextWave.turn}: ${nextWave.plan.name}${nextWave.plan.enemyFactionName ? ` · ${nextWave.plan.enemyFactionName}` : ''}`
+        : ''
       if (app.nextTurnBtn && nextWave?.summary) {
         app.nextTurnBtn.title = nextWave.summary
       }
@@ -464,8 +502,9 @@ export class GameHud {
               const pressure = app.game.getThreatPreview?.(entry.key, 'player') || { attackers: 0 }
               const status = entry.ready ? `${entry.mpRemaining} MP` : 'spent'
               const active = entry.key === selectedKey ? ' hx-activation-queue__item--active' : ''
+              const label = PLAYER_UNIT_TYPES.includes(entry.obj.type) ? entry.obj.type.toUpperCase() : entry.obj.type
               return `<div class="hx-activation-queue__item${active}">
-                <span>${entry.obj.type.toUpperCase()}</span>
+                <span>${label}</span>
                 <span>${status}${pressure.attackers > 0 ? ` · ${pressure.attackers} threat` : ''}</span>
               </div>`
             }).join('')}
@@ -503,6 +542,8 @@ export class GameHud {
     const checkLock = (btn, tech) => { if (!btn) return; const isLocked = tech && !app.game.researched.has(tech); btn.disabled = isLocked; btn.style.filter = isLocked ? 'grayscale(1) opacity(0.4)' : 'none'; }
     app.buildingsList.forEach(d => checkLock(app.buildButtons[d.id], d.tech))
     app.unitsList.forEach(d => checkLock(app.unitButtons[d.id], d.tech))
+    for (const [bid, btn] of Object.entries(app.buildButtons)) btn.style.background = bid === (app.selectedBuilding ?? this.selectedBuilding) ? 'var(--hx-bg-active)' : 'transparent'
+    for (const [uid, btn] of Object.entries(app.unitButtons)) btn.style.background = uid === (app.selectedUnitType ?? this.selectedUnitType) ? 'var(--hx-bg-active)' : 'transparent'
     if (app.unitManager) app.unitManager.updateVisibility()
     if (app.unitManager) for (const [cKey, obj] of app.game.objects.entries()) if (obj.hp !== undefined) app.unitManager.updateHP(cKey, obj.hp, obj.maxHp, obj.rank || 1)
 

@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { GameSession } from '../../../src/game/GameSession.js'
 import { BUILDINGS, UNITS, TECH_TREE, formatCost } from '../../../src/game/GameData.js'
-import { ECONOMY } from '../../../src/game/constants.js'
+import { ECONOMY, PLAYER_UNIT_TYPES } from '../../../src/game/constants.js'
 
 const mockApp = () => ({
   unitManager: { getWorldPosition: vi.fn(() => ({ x: 0, y: 0, z: 0 })) },
@@ -152,7 +152,7 @@ describe('GameSession Integration', () => {
       expect(session.objects.size).toBe(3)
       
       const units = Array.from(session.objects.values()).filter(
-        o => ['scout', 'archer', 'knight'].includes(o.type)
+        o => PLAYER_UNIT_TYPES.includes(o.type)
       )
       expect(units.length).toBe(3)
     })

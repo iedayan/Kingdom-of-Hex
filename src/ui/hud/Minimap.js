@@ -1,4 +1,5 @@
 import { EventBus } from '../../core/events/EventBus.js'
+import { PLAYER_UNIT_TYPES } from '../../game/constants.js'
 
 export class Minimap {
   constructor(app) {
@@ -209,7 +210,7 @@ export class Minimap {
     
     for (const [key, obj] of game.objects) {
       if (obj.owner !== 'player') continue
-      if (!['scout', 'archer', 'knight'].includes(obj.type)) continue
+      if (!PLAYER_UNIT_TYPES.includes(obj.type)) continue
       
       const [x, , z] = key.split(',').map(Number)
       const { px, pz } = this.worldToMinimap(x, z, bounds)
